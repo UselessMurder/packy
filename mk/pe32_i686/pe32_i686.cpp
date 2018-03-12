@@ -389,25 +389,41 @@ std::uint32_t pe32_i686::build_code(std::vector<std::uint8_t> *stub,
   e.init_state();
 
   e.start_frame("general");
-  e.add_var("lool", 12);
+  e.copy_fundamental("fundamental");
 
   e.start_segment("begin");
+  e.bsp("ebp_", eg::i8086::ebp);
+  e.f("push_rd", e.g("ebp_"));
+  e.bsp("esp_", eg::i8086::esp);
+  e.f("mov_rd_rd", e.g("ebp_"), e.g("esp_"));
+  e.f("sub_rd_vd", e.g("esp_"), e.frszd());
+  e.fr("esp_");
+  e.f("push_vd", std::uint64_t(0x30));
+  e.bf("shift", "common");
+  e.f("pop_rd", e.g("shift"));
+  e.bsp("fs_", eg::i8086::fs);
+  e.f("mov_rd_serd", e.g("shift"), e.g("fs_"), e.g("shift"));
+  e.fr("fs_");
+  e.f("mov_rd_smd", e.g("shift"), e.g("shift"), "+", std::uint64_t(0x8));
+  e.f("mov_smd_rd", e.g("ebp_"), "-", e.vshd("base"), e.g("shift"));
+  e.fr("shift");
+  e.bf("accum", "common");
+  e.f("mov_rd_smd", e.g("accum"), e.g("ebp_"), "-", e.vshd("base"));
+  e.f("add_rd_vd", e.g("accum"), e.shd("tmp"));
+  e.f("mov_smd_rd", e.g("ebp_"), "-", e.vshd("target"), e.g("accum"));
+  e.f("mov_smb_vb", e.g("ebp_"), "-", e.vshd("crc_switch"), std::uint64_t(0));
+  e.f("mov_smd_vd", e.g("ebp_"), "-", e.vshd("count"), e.fszd("tmp"));
+  e.f("invoke", e.shd("crc"));
+  e.f("mov_rd_smd", e.g("accum"), e.g("ebp_"), "-", e.vshd("result"));
+  e.f("cmp_rd_vd", e.g("accum"), e.c32d("tmp", {}));
+  e.fr("accum");
+  e.fr("ebp_");
 
-  e.bf("r1", "common");
-
-  e.f("push_rd", e.g("r1"));
-
-  e.ta("nasm", "call [ebp + 0x5]");
-
-  e.fr("r1");
+  std::vector<uint8_t> tmp = {0,1,2,3,4,5};
 
   e.end();
 
-  e.start_segment("end");
-
-  e.t("xor eax, eax");
-
-  e.end();
+  e.add_data("tmp", &tmp);
 
   e.end();
 
@@ -498,6 +514,8 @@ std::uint32_t pe32_i686::build_code(std::vector<std::uint8_t> *stub,
   //printf("%s\n", e.to_string().c_str());
 
   e.build(stub);
+
+  //printf("%s\n", e.to_string().c_str());
 
   return static_cast<std::uint32_t>(e.get_entry_point());
 }

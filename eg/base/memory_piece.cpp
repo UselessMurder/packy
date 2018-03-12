@@ -60,13 +60,13 @@ void group::resize(node *root) {
         current_size += node_cast<memory_piece>(ch)->get_full_size();
     }
 
-    if (self_state > build_states::locating && size < current_size &&
+    if (br->get_state() > build_states::locating && size < current_size &&
         check_flag(type_flags::fixed))
       throw std::domain_error("Size more wan align size, id: " +
                               std::to_string(get_object_id()));
 
-    if (self_state > build_states::locating && current_size < size &&
-        check_flag(type_flags::fixed)) {
+    if (br->get_state() > build_states::locating &&
+        (current_size != size + overhead) && check_flag(type_flags::fixed)) {
       overhead = size - current_size;
       size = current_size;
     } else
@@ -157,6 +157,9 @@ void group::get_content(std::vector<std::uint8_t> *content,
        flags.check_flag(properties_flags::alter_childs))) {
     root->apply_alters(&tmp, name);
   }
+
+  if ((tmp.size() != size + overhead) && check_flag(type_flags::fixed))
+    throw std::domain_error("Some shit happen!");
 
   content->insert(content->end(), tmp.begin(), tmp.end());
 }
@@ -251,7 +254,7 @@ void code_line::rebuild(std::uint8_t build_code) {
     code.clear();
 
     for (auto ch : childs)
-      if (ch->check_flag(type_flags::build_part))
+     if (ch->check_flag(type_flags::build_part))
         ss << node_cast<part>(ch)->to_string();
 
     root->assembly(&code, ss.str(), assembler_name, shift);
@@ -273,7 +276,7 @@ std::uint64_t code_line::get_payload_size() {
 }
 
 void code_line::append_part(part *current_part) {
-  current_part->set_parent(this);
+    current_part->set_parent(this);
 }
 
 void code_line::get_content(std::vector<std::uint8_t> *content,

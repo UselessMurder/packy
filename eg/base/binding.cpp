@@ -11,6 +11,10 @@ global_object::global_object() {
   global_object_id = global::cs.generate_unique_number("gobj");
 }
 
+global_object::global_object(const global_object &obj) {
+  global_object_id = global::cs.generate_unique_number("gobj");
+}
+
 global_object::~global_object() {}
 
 std::uint64_t global_object::get_object_id() { return global_object_id; }
@@ -25,6 +29,12 @@ node::node(node *parent) : global_object(), global::flag_container() {
 node::~node() {
   for (auto ch : childs)
     delete ch;
+}
+
+node::node(const node &n) : global_object(n), global::flag_container(n) {
+  parent_node = reinterpret_cast<node *>(0);
+  last_current = reinterpret_cast<node *>(0);
+  name = n.name;
 }
 
 void node::join_context(std::uint64_t ctx) { contexts.insert(ctx); }
@@ -248,6 +258,10 @@ void crypto_alghorithm::generate_key(
 
 string_container::string_container(std::vector<std::string> current_names) {
   names = current_names;
+}
+
+string_container::string_container(const string_container &obj) {
+  names = obj.names;
 }
 
 string_container::~string_container() {}

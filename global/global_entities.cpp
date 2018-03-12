@@ -173,6 +173,9 @@ flag_container::flag_container(
   for (auto f : current_flags)
     set_flag(f);
 }
+flag_container::flag_container(const flag_container &fc) {
+  flag_storage = fc.flag_storage;
+}
 flag_container::~flag_container() {}
 bool flag_container::check_flag(std::uint8_t flag_index) {
   if (flag_index >= 64)
@@ -254,9 +257,9 @@ void flag_container::move_flags(flag_container &current_flag_container) {
   flag_storage = current_flag_container.flag_storage;
 }
 
-void flag_container::copy_flags(flag_container &current_flag_container) {
+void flag_container::copy_flags(flag_container current_flag_container) {
   flag_storage = flag_storage | current_flag_container.flag_storage;
-} 
+}
 
 std::string flag_container::flags_to_string() {
   return std::bitset<64>(flag_storage).to_string();

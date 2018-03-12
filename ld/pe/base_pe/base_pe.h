@@ -154,8 +154,7 @@ protected:
   virtual void continue_parsing() = 0;
 
   void read_section_headers_from_file(std::uint64_t shift);
-  void read_sections_from_file(std::uint64_t shift, std::uint32_t align,
-                               std::uint32_t sections_begin);
+  void read_sections_from_file(std::uint64_t shift, std::uint32_t align, std::uint32_t sections_begin);
   void parse_import(image_data_directory *directories);
 
   virtual void read_thuncks(

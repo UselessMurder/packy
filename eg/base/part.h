@@ -10,23 +10,31 @@
 
 namespace eg {
 class part : public node, public printable_object {
+protected:
+  bool in_trash();
 public:
   part(node *parent);
+  part(const part &obj);
   virtual ~part();
   virtual std::string to_string() = 0;
+  virtual part *clone() = 0;
+  virtual void set_parent(node *current_parent);
 };
 
 class dependence_part : public part {
 protected:
-  std::uint64_t join_group;
-  std::function<std::uint64_t()> resolver;
+  std::function<std::uint64_t(part *p)> resolver;
 
 public:
   dependence_part(node *parent);
+  dependence_part(const dependence_part &obj) : part(obj) {
+    resolver = obj.resolver;
+  }
   virtual ~dependence_part();
-  void set_resolver(std::function<std::uint64_t()> current_resolver);
+  void set_resolver(std::function<std::uint64_t(part *p)> current_resolver);
   std::uint64_t get_value();
   std::string to_string();
+  virtual part *clone();
 };
 
 template <typename T> class simple_part : public part {
@@ -37,6 +45,9 @@ public:
   simple_part(node *parent, T current_value) : part(parent) {
     set_flag(type_flags::part_simple);
     value = current_value;
+  }
+  simple_part(const simple_part &obj) : part(obj) {
+    value = obj.value;
   }
   ~simple_part() {}
 
@@ -49,6 +60,9 @@ public:
     s << value;
     return s.str();
   }
+  virtual part *clone() {
+    return new simple_part<T>(*this);
+  }
 };
 
 class part_wrapper : public part {
@@ -59,6 +73,7 @@ private:
 public:
   part_wrapper(node *parent, part *current_part,
                std::vector<uint64_t> current_values);
+  part_wrapper(const part_wrapper &obj);
   ~part_wrapper();
   void
   set_wrapper(std::function<std::uint64_t(part_wrapper *p)> current_wrapper);
@@ -79,8 +94,9 @@ public:
   bool is_same(flag_container &current_flag_container);
   bool is_match(flag_container &current_flag_container);
   void move_flags(flag_container &current_flag_container);
-  void copy_flags(flag_container &current_flag_container);
+  void copy_flags(flag_container current_flag_container);
   std::string flags_to_string();
+  virtual part *clone();
 };
 
 class cached_dependence : public dependence_part, public string_container {
@@ -89,9 +105,11 @@ private:
 
 public:
   cached_dependence(node *parent, std::vector<std::string> names);
+  cached_dependence(const cached_dependence &obj);
   ~cached_dependence();
   std::uint64_t get_cached_value();
   void set_cached_value(std::uint64_t value);
+  virtual part *clone();
 };
 
 template <typename T> T get_part_value(part *p) {

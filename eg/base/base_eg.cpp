@@ -242,6 +242,8 @@ void build_root::apply_user_input(sin::context *ctx) {
     return;
   }
   bool appled = false;
+
+
   form *current_form =
       find_node_by_name<form>(get_morph_node(), ctx->get_form_name(),
                               {bypass_flags::self, bypass_flags::childs});
@@ -249,7 +251,7 @@ void build_root::apply_user_input(sin::context *ctx) {
   current_form->get_invariants(&invariants);
   global::rc.random_shuffle_vector(&invariants);
   for (auto iv : invariants) {
-    if (iv->is_match(*ctx) && iv->try_execute(&ctx->get_args())) {
+    if (iv->is_match(*ctx) && iv->try_execute(*ctx, &ctx->get_args())) {
       appled = true;
       break;
     }
@@ -361,6 +363,15 @@ void build_root::taging() {
 
 void build_root::keyring() {
   self_state = build_states::keyring;
+
+  get_build_node()->run_functor(
+      [](node *n, std::uint64_t ctx) -> bool {
+        if (n->check_flag(type_flags::build_frame))
+          node_cast<frame>(n)->fix_vars();
+        return false;
+      },
+      {bypass_flags::childs}, global::cs.generate_unique_number("ctx"));
+  
   for (auto ep : enabled_pieces) {
     auto mp = find_node_by_name<memory_piece>(get_build_node(), ep.first,
                                               {bypass_flags::childs});
@@ -387,14 +398,6 @@ void build_root::locating() {
 
 void build_root::translating(std::vector<uint8_t> *stub) {
   self_state = build_states::translating;
-
-  get_build_node()->run_functor(
-      [](node *n, std::uint64_t ctx) -> bool {
-        if (n->check_flag(type_flags::build_frame))
-          node_cast<frame>(n)->fix_vars();
-        return false;
-      },
-      {bypass_flags::childs}, global::cs.generate_unique_number("ctx"));
 
   for (auto mp : build_sequence) {
     std::uint64_t shift_val = mp->get_shift();
@@ -653,7 +656,8 @@ build_root::wr(part *target_part, std::vector<std::uint64_t> values,
 part *build_root::dd(std::string begin_name, std::string end_name) {
   cached_dependence *p =
       new cached_dependence(get_trash_node(), {begin_name, end_name});
-  p->set_resolver([this, p]() -> std::uint64_t {
+  p->set_resolver([this](part *cp) -> std::uint64_t {
+    auto p = node_cast<cached_dependence>(cp);
     if (p->check_flag(type_flags::node_cached))
       return p->get_cached_value();
     if (this->get_state() >= build_states::translating) {
@@ -703,7 +707,8 @@ part *build_root::ddls(std::string begin_name, std::string end_name,
 
 part *build_root::vshd(std::string var_name) {
   cached_dependence *p = new cached_dependence(get_trash_node(), {var_name});
-  p->set_resolver([this, p]() -> std::uint64_t {
+  p->set_resolver([this](part *cp) -> std::uint64_t {
+    auto p = node_cast<cached_dependence>(cp);
     if (p->check_flag(type_flags::node_cached))
       return p->get_cached_value();
     if (this->get_state() >= build_states::translating) {
@@ -720,7 +725,8 @@ part *build_root::vshd(std::string var_name) {
 
 part *build_root::vszd(std::string var_name) {
   cached_dependence *p = new cached_dependence(get_trash_node(), {var_name});
-  p->set_resolver([this, p]() -> std::uint64_t {
+  p->set_resolver([this](part *cp) -> std::uint64_t {
+    auto p = node_cast<cached_dependence>(cp);
     if (p->check_flag(type_flags::node_cached))
       return p->get_cached_value();
     if (this->get_state() >= build_states::translating) {
@@ -737,7 +743,8 @@ part *build_root::vszd(std::string var_name) {
 
 part *build_root::frszd() {
   cached_dependence *p = new cached_dependence(get_trash_node(), {});
-  p->set_resolver([this, p]() -> std::uint64_t {
+  p->set_resolver([this](part *cp) -> std::uint64_t {
+    auto p = node_cast<cached_dependence>(cp);
     if (p->check_flag(type_flags::node_cached))
       return p->get_cached_value();
     if (this->get_state() >= build_states::translating) {
@@ -753,7 +760,8 @@ part *build_root::frszd() {
 
 part *build_root::shd(std::string memory_name) {
   cached_dependence *p = new cached_dependence(get_trash_node(), {memory_name});
-  p->set_resolver([this, p]() -> std::uint64_t {
+  p->set_resolver([this](part *cp) -> std::uint64_t {
+    auto p = node_cast<cached_dependence>(cp);
     if (p->check_flag(type_flags::node_cached))
       return p->get_cached_value();
     if (this->get_state() >= build_states::translating) {
@@ -773,7 +781,8 @@ part *build_root::shd(std::string memory_name) {
 
 part *build_root::fszd(std::string memory_name) {
   cached_dependence *p = new cached_dependence(get_trash_node(), {memory_name});
-  p->set_resolver([this, p]() -> std::uint64_t {
+  p->set_resolver([this](part *cp) -> std::uint64_t {
+    auto p = node_cast<cached_dependence>(cp);
     if (p->check_flag(type_flags::node_cached))
       return p->get_cached_value();
     if (this->get_state() >= build_states::translating) {
@@ -793,7 +802,8 @@ part *build_root::fszd(std::string memory_name) {
 
 part *build_root::pszd(std::string memory_name) {
   cached_dependence *p = new cached_dependence(get_trash_node(), {memory_name});
-  p->set_resolver([this, p]() -> std::uint64_t {
+  p->set_resolver([this](part *cp) -> std::uint64_t {
+    auto p = node_cast<cached_dependence>(cp);
     if (p->check_flag(type_flags::node_cached))
       return p->get_cached_value();
     if (this->get_state() >= build_states::translating) {
@@ -820,7 +830,8 @@ union i64_i8 {
 part *build_root::kd(std::string key_name, std::uint32_t bitness,
                      std::uint32_t index) {
   cached_dependence *p = new cached_dependence(get_trash_node(), {key_name});
-  p->set_resolver([this, p, bitness, index]() -> std::uint64_t {
+  p->set_resolver([this, bitness, index](part *cp) -> std::uint64_t {
+    auto p = node_cast<cached_dependence>(cp);
     if (p->check_flag(type_flags::node_cached))
       return p->get_cached_value();
     if (this->get_state() >= build_states::translating) {
@@ -849,7 +860,8 @@ part *build_root::kd(std::string key_name, std::uint32_t bitness,
 
 part *build_root::c32d(std::string memory_name, global::flag_container flags) {
   cached_dependence *p = new cached_dependence(get_trash_node(), {memory_name});
-  p->set_resolver([this, p, flags]() -> std::uint64_t {
+  p->set_resolver([this, flags](part *cp) -> std::uint64_t {
+    auto p = node_cast<cached_dependence>(cp);
     if (p->check_flag(type_flags::node_cached))
       return p->get_cached_value();
     if (this->get_state() >= build_states::translating) {
@@ -873,7 +885,8 @@ part *build_root::c32d(std::string memory_name, global::flag_container flags) {
 
 part *build_root::c64d(std::string memory_name, global::flag_container flags) {
   cached_dependence *p = new cached_dependence(get_trash_node(), {memory_name});
-  p->set_resolver([this, p, flags]() -> std::uint64_t {
+  p->set_resolver([this, flags](part *cp) -> std::uint64_t {
+    auto p = node_cast<cached_dependence>(cp);
     if (p->check_flag(type_flags::node_cached))
       return p->get_cached_value();
     if (this->get_state() >= build_states::translating) {

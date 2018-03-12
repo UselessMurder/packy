@@ -8,29 +8,61 @@
 namespace eg {
 part::part(node *parent) : node(parent) { set_flag(type_flags::build_part); }
 
+part::part(const part &obj) : node(obj) {}
+
 part::~part() {}
+
+bool part::in_trash() {
+  if (parent_node == reinterpret_cast<node *>(0))
+    return true;
+  if (parent_node->check_flag(type_flags::trash_branch))
+    return true;
+  return false;
+}
+
+void part::set_parent(node *current_parent) {
+  if (in_trash()) {
+    if (parent_node != reinterpret_cast<node *>(0)) {
+      parent_node->free_node(this);
+    }
+    parent_node = current_parent;
+    current_parent->grab_node(this);
+  } else
+    clone()->set_parent(current_parent);
+}
 
 dependence_part::dependence_part(node *parent) : part(parent) {
   set_flag(type_flags::dependence);
 }
 dependence_part::~dependence_part() {}
 void dependence_part::set_resolver(
-    std::function<std::uint64_t()> current_resolver) {
+    std::function<std::uint64_t(part *p)> current_resolver) {
   resolver = current_resolver;
 }
 std::uint64_t dependence_part::get_value() {
   if (!resolver)
     throw std::domain_error("Resolver for dependence part with id: " +
                             std::to_string(get_object_id()) + " is not set!");
-  return resolver();
+  return resolver(this);
 }
 std::string dependence_part::to_string() { return std::to_string(get_value()); }
+
+part *dependence_part::clone() { return new dependence_part(*this); }
 
 part_wrapper::part_wrapper(node *parent, part *current_part,
                            std::vector<uint64_t> current_values)
     : part(parent) {
   current_part->set_parent(this);
   values = current_values;
+}
+
+part_wrapper::part_wrapper(const part_wrapper &obj) : part(obj) {
+  values = obj.values;
+  wrapper = obj.wrapper;
+  if (childs.size() != 1)
+    throw std::domain_error("Too many childs for wrapper with id: " +
+                            std::to_string(get_object_id()));
+  node_cast<part>(childs[0])->clone()->set_parent(this);
 }
 
 part_wrapper::~part_wrapper() {}
@@ -58,7 +90,7 @@ std::uint64_t part_wrapper::get_value_by_index(std::uint32_t index) {
 part *part_wrapper::get_wrapped() {
   if (childs.size() != 1)
     throw std::domain_error("Too many childs for wrapper with id: " +
-                            std::to_string(this->get_object_id()));
+                            std::to_string(get_object_id()));
   return node_cast<part>(childs[0]);
 }
 
@@ -106,16 +138,23 @@ bool part_wrapper::is_match(flag_container &current_flag_container) {
 void part_wrapper::move_flags(flag_container &current_flag_container) {
   get_wrapped()->move_flags(current_flag_container);
 }
-void part_wrapper::copy_flags(flag_container &current_flag_container) {
+void part_wrapper::copy_flags(flag_container current_flag_container) {
   get_wrapped()->copy_flags(current_flag_container);
 }
 std::string part_wrapper::flags_to_string() {
   return get_wrapped()->flags_to_string();
 }
 
+part *part_wrapper::clone() { return new part_wrapper(*this); }
+
 cached_dependence::cached_dependence(node *parent,
                                      std::vector<std::string> names)
     : dependence_part(parent), string_container(names) {}
+
+cached_dependence::cached_dependence(const cached_dependence &obj)
+    : dependence_part(obj), string_container(obj) {
+  cached_value = obj.cached_value;
+}
 
 cached_dependence::~cached_dependence() {}
 
@@ -129,5 +168,7 @@ void cached_dependence::set_cached_value(std::uint64_t value) {
   set_flag(type_flags::node_cached);
   cached_value = value;
 }
+
+part *cached_dependence::clone() { return new cached_dependence(*this); }
 
 } // namespace eg

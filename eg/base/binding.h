@@ -72,7 +72,11 @@ enum nf : std::uint8_t {
   trash_branch = 23,
   memory_top = 24,
   invariant_recursive = 25,
-  ignore = 26
+  ignore = 26,
+  stack_safe = 27,
+  flag_safe = 28,
+  fundomental_undepended = 29,
+  debug_unprotected = 30
 };
 }
 
@@ -89,6 +93,7 @@ private:
 
 public:
   global_object();
+  global_object(const global_object &obj);
   virtual ~global_object();
   std::uint64_t get_object_id();
 };
@@ -110,6 +115,7 @@ protected:
 
 public:
   node(node *parent);
+  node(const node &n);
   virtual ~node();
 
   virtual void set_name(std::string current_name);
@@ -198,6 +204,7 @@ protected:
 
 public:
   string_container(std::vector<std::string> current_names);
+  string_container(const string_container &obj);
   virtual ~string_container();
   std::string get_name_by_index(std::uint32_t index);
 };

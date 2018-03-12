@@ -26,7 +26,7 @@ void invariant::add_variable(std::string variable_name, std::uint32_t bitness) {
 }
 
 void invariant::register_programmer(
-    std::function<void(std::map<std::string, part *> *)> current_programmer) {
+    std::function<void(global::flag_container, std::map<std::string, part *> *)> current_programmer) {
   programmer = current_programmer;
 }
 
@@ -52,7 +52,7 @@ void invariant::validate_variables(std::map<std::string, part *> *vars) {
   }
 }
 
-bool invariant::try_execute(std::vector<part *> *args) {
+bool invariant::try_execute(global::flag_container fl, std::vector<part *> *args) {
 
   build_root *root = find_node_by_flag<build_root>(this, type_flags::build_root,
                                                    {bypass_flags::parents});
@@ -68,7 +68,10 @@ bool invariant::try_execute(std::vector<part *> *args) {
         std::to_string(get_object_id()));
 
   if (check_flag(type_flags::invariant_recursive)) {
-    if (root->is_recursion_counter())
+
+
+  if(get_object_id() <= 11 && get_object_id() >= 8)
+    if (!root->is_recursion_counter())
       return false;
     root->up_recursion_counter();
     recursion_guard.set_defer([root]() { root->down_recursion_counter(); });
@@ -123,7 +126,7 @@ bool invariant::try_execute(std::vector<part *> *args) {
   g->select_node();
   DEFER(g->unselect_node(););
   if (programmer) {
-    programmer(&vars);
+    programmer(fl, &vars);
   } else {
     throw std::domain_error(
         "Cant`t execute invariant with id: " + std::to_string(get_object_id()) +

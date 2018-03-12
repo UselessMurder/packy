@@ -64,6 +64,7 @@ private:
 
 public:
   flag_container();
+  flag_container(const flag_container &fc);
   flag_container(std::initializer_list<std::uint8_t> current_flags);
   virtual ~flag_container();
   virtual bool check_flag(std::uint8_t flag_index);
@@ -79,7 +80,7 @@ public:
   virtual bool is_same(flag_container &current_flag_container);
   virtual bool is_match(flag_container &current_flag_container);
   virtual void move_flags(flag_container &current_flag_container);
-  virtual void copy_flags(flag_container &current_flag_container);
+  virtual void copy_flags(flag_container current_flag_container);
   virtual std::string flags_to_string();
 };
 

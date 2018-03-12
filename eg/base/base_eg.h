@@ -250,6 +250,8 @@ public:
 
   void build(std::vector<uint8_t> *stub);
 
+  virtual void copy_fundamental(std::string frame_name) = 0;
+
   std::uint64_t get_entry_point();
 };
 
