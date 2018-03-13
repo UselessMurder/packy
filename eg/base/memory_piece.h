@@ -91,6 +91,7 @@ class data_line : public memory_piece {
     std::uint64_t get_full_size();
     std::uint64_t get_payload_size();
     void set_content(std::vector<std::uint8_t> *content);
+    void resize(std::uint64_t current_size);
     void get_content(std::vector<std::uint8_t> *content, global::flag_container flags);
     std::string to_string();
 };

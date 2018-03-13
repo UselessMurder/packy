@@ -1,8 +1,8 @@
 #ifndef PART_H
 #define PART_H
 
-#include <eg/base/binding.h>
 #include <cstdint>
+#include <eg/base/binding.h>
 #include <functional>
 #include <sstream>
 #include <string>
@@ -12,6 +12,7 @@ namespace eg {
 class part : public node, public printable_object {
 protected:
   bool in_trash();
+
 public:
   part(node *parent);
   part(const part &obj);
@@ -39,29 +40,55 @@ public:
 
 template <typename T> class simple_part : public part {
 private:
+  std::set<part *> brothers;
   T value;
+
+  void take_to_brotherhood(part *p) {
+    auto sp = node_cast<simple_part<T>>(p);
+    sp->brothers.insert(this);
+    for (auto br : brothers) {
+      sp->brothers.insert(br);
+      node_cast<simple_part<T>>(br)->brothers.insert(p);
+    }
+    brothers.insert(p);
+  }
 
 public:
   simple_part(node *parent, T current_value) : part(parent) {
     set_flag(type_flags::part_simple);
     value = current_value;
   }
-  simple_part(const simple_part &obj) : part(obj) {
-    value = obj.value;
-  }
+  simple_part(const simple_part &obj) : part(obj) { value = obj.value; }
   ~simple_part() {}
 
   T get_value() { return value; }
 
-  void set_value(T current_value) { value = current_value; }
+  void set_value(T current_value) {
+    value = current_value;
+    for (auto br : brothers)
+      node_cast<simple_part<T>>(br)->set_value(current_value);
+  }
 
   std::string to_string() {
     std::stringstream s;
     s << value;
     return s.str();
   }
-  virtual part *clone() {
-    return new simple_part<T>(*this);
+
+  virtual part *clone() { return new simple_part<T>(*this); }
+
+  void set_parent(node *current_parent) {
+    if (in_trash()) {
+      if (parent_node != reinterpret_cast<node *>(0)) {
+        parent_node->free_node(this);
+      }
+      parent_node = current_parent;
+      current_parent->grab_node(this);
+    } else {
+      auto p = clone();
+      p->set_parent(current_parent);
+      take_to_brotherhood(p);
+    }
   }
 };
 

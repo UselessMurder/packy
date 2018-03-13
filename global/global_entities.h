@@ -123,6 +123,8 @@ extern consistent_sequence cs;
 void align(std::uint64_t &size, std::uint64_t &overhead,
            std::uint64_t align_value);
 
+void table_to_byte_array(std::vector<std::uint8_t> *byte_array, std::vector<std::uint32_t> *table);
+
 } // namespace global
 
 #endif

@@ -212,6 +212,7 @@ public:
 
   void start_frame(std::string frame_name);
   void start_segment(std::string segment_name);
+  void start_top_segment(std::string segment_name);
   void start_segment(std::string segment_name, std::string frame_name);
   void fix_segment(std::string segment_name);
 
@@ -219,6 +220,7 @@ public:
   void copy_var(std::string var_name, std::string frame_name);
 
   void add_data(std::string data_name, std::vector<uint8_t> *data_content);
+  void add_data(std::string data_name, std::uint64_t data_size);
   void add_key(std::string key_name);
 
   part *wr(part *target_part, std::vector<std::uint64_t> values,
@@ -250,7 +252,7 @@ public:
 
   void build(std::vector<uint8_t> *stub);
 
-  virtual void copy_fundamental(std::string frame_name) = 0;
+  virtual void copy_fundamental() = 0;
 
   std::uint64_t get_entry_point();
 };

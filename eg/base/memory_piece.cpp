@@ -347,6 +347,11 @@ void data_line::set_content(std::vector<std::uint8_t> *content) {
   data.clear();
   data.insert(data.end(), content->begin(), content->end());
 }
+
+void data_line::resize(std::uint64_t current_size) {
+  data.resize(current_size, 0);
+}
+
 void data_line::get_content(std::vector<std::uint8_t> *content,
                             global::flag_container flags) {
   prepare();

@@ -23,7 +23,7 @@ public:
   ~i686();
   void init_state();
 
-  void copy_fundamental(std::string frame_name);
+  void copy_fundamental();
   void push_registers(std::initializer_list<std::string> registers);
   void pop_registers(std::initializer_list<std::string> registers);
 };

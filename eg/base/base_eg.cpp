@@ -208,7 +208,7 @@ std::uint64_t build_root::assembly(std::vector<std::uint8_t> *code,
   if (!(acode = r_asm_rasm_assemble(assemblers[assembler_name],
                                     instruction.c_str(), false)))
     throw std::invalid_argument(
-        "Cant`t assembly instruction: " + instruction +
+        "Can`t assembly instruction: " + instruction +
         ", using assembler with name: " + assembler_name);
   DEFER(r_asm_code_free(acode););
   if (!acode->len)
@@ -242,7 +242,6 @@ void build_root::apply_user_input(sin::context *ctx) {
     return;
   }
   bool appled = false;
-
 
   form *current_form =
       find_node_by_name<form>(get_morph_node(), ctx->get_form_name(),
@@ -583,6 +582,23 @@ void build_root::start_segment(std::string segment_name) {
   current_group->select_node();
 }
 
+void build_root::start_top_segment(std::string segment_name) {
+  duplicate_guard(segment_name);
+  node *current_node =
+      find_node_by_flag<node>(get_build_node(), type_flags::node_current,
+                              {bypass_flags::self, bypass_flags::childs});
+  group *current_group = reinterpret_cast<group *>(0);
+  if(!current_node->check_flag(type_flags::build_frame)) {
+    current_node = find_node_by_flag<node>(
+      current_node, type_flags::build_frame, {bypass_flags::parents});
+  }
+  current_group = new group(current_node);
+  current_group->set_flag(type_flags::fixed);
+  current_group->set_flag(type_flags::memory_top);
+  current_group->set_name(segment_name);
+  current_group->select_node();
+}
+
 void build_root::start_segment(std::string segment_name,
                                std::string frame_name) {
   duplicate_guard(segment_name);
@@ -615,6 +631,19 @@ void build_root::add_data(std::string data_name,
     current_data->set_flag(type_flags::memory_top);
   current_data->set_name(data_name);
   current_data->set_content(data_content);
+}
+
+void build_root::add_data(std::string data_name, std::uint64_t data_size) {
+  duplicate_guard(data_name);
+  node *current_node =
+      find_node_by_flag<node>(get_build_node(), type_flags::node_current,
+                              {bypass_flags::self, bypass_flags::childs});
+  data_line *current_data = new data_line(current_node);
+  if (current_node->check_flag(type_flags::build_frame) ||
+      current_node->check_flag(type_flags::build_branch))
+    current_data->set_flag(type_flags::memory_top);
+  current_data->set_name(data_name);
+  current_data->resize(data_size);
 }
 
 void build_root::add_key(std::string key_name) {

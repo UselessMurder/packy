@@ -281,4 +281,18 @@ void align(std::uint64_t &size, std::uint64_t &overhead,
   overhead = (count * align_value) - size;
 }
 
+union uint32_uint8 {
+  std::uint32_t value;
+  std::uint8_t bytes[4];
+};
+
+void table_to_byte_array(std::vector<std::uint8_t> *byte_array, std::vector<std::uint32_t> *table) {
+  for(auto row : *table) {
+    uint32_uint8 tmp;
+    tmp.value = row;
+    for(std::uint8_t i = 0; i < 4; i++)
+      byte_array->push_back(tmp.bytes[i]);
+  }
+}
+
 } // namespace global

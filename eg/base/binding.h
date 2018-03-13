@@ -76,7 +76,8 @@ enum nf : std::uint8_t {
   stack_safe = 27,
   flag_safe = 28,
   fundomental_undepended = 29,
-  debug_unprotected = 30
+  debug_unprotected = 30,
+  will_balanced = 31
 };
 }
 

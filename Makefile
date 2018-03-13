@@ -24,8 +24,8 @@ LIBS += -llibr_asm
 LIBS += -llibboost_filesystem-mt
 LIBS += -llibboost_system-mt
 
-CPPFLAGS += -std=c++17 -Wc++17-extensions $(INC_DIR) 
-#CPPFLAGS += -std=c++17 $(INC_DIR) 
+CPPFLAGS += -std=c++17 -Wc++17-extensions $(INC_DIR)  
+#CPPFLAGS += -std=c++17 -static-libstdc++ $(INC_DIR) 
 
 OBJECTS = objfiles/main.o
 OBJECTS += objfiles/packy.o

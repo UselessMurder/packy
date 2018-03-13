@@ -94,9 +94,12 @@ bool invariant::try_execute(global::flag_container fl, std::vector<part *> *args
   for (std::uint32_t i = 0; i < args->size(); i++)
     vars[(*args_template)[i].first] = (*args)[i];
 
-  for (auto v : variables)
+  for (auto v : variables) {
     vars[v.first] = create_simple_part(root->get_trash_node(),
                                        root->get_stub_with_bitness(v.second));
+    if(balancer)
+      vars[v.first]->set_flag(type_flags::will_balanced);
+  }
 
   node *current =
       find_node_by_flag<node>(root->get_build_node(), type_flags::node_current,

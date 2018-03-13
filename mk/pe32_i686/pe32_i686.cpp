@@ -389,7 +389,7 @@ std::uint32_t pe32_i686::build_code(std::vector<std::uint8_t> *stub,
   e.init_state();
 
   e.start_frame("general");
-  e.copy_fundamental("fundamental");
+  e.copy_fundamental();
 
   e.start_segment("begin");
   e.bsp("ebp_", eg::i8086::ebp);

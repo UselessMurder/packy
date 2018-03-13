@@ -207,7 +207,7 @@ bool machine_state::try_grab_registers(
     auto range = group_members.equal_range(g);
     for (auto i = range.first; i != range.second; ++i) {
       if (get_free_count(g) < 1) {
-        free(out);
+        free_registers(out);
         return false;
       }
       auto r = get_free(g);
@@ -215,6 +215,7 @@ bool machine_state::try_grab_registers(
       (*out)[i->second] = r;
     }
   }
+
   return true;
 }
 
