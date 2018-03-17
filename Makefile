@@ -24,6 +24,7 @@ LIBS += -llibr_asm
 LIBS += -llibboost_filesystem-mt
 LIBS += -llibboost_system-mt
 LIBS += -llibcryptopp
+LIBS += -lliblzo2
 
 CPPFLAGS += -std=c++17 -Wc++17-extensions $(INC_DIR)  
 #CPPFLAGS += -std=c++17 -static-libstdc++ $(INC_DIR) 
@@ -35,6 +36,7 @@ OBJECTS += objfiles/base_ld.o
 OBJECTS += objfiles/base_pe.o
 OBJECTS += objfiles/pe32.o
 OBJECTS += objfiles/base_mk.o
+OBJECTS += objfiles/compress.o
 OBJECTS += objfiles/crypto.o
 OBJECTS += objfiles/global_entities.o
 OBJECTS += objfiles/pe32_i686.o
@@ -74,6 +76,9 @@ objfiles/pe32.o: ld/pe/pe32/pe32.cpp
 
 objfiles/base_mk.o: mk/base_mk/base_mk.cpp
 	$(COMPILER) -c -o objfiles/base_mk.o mk/base_mk/base_mk.cpp $(CPPFLAGS)
+
+objfiles/compress.o: mk/base_mk/compress.cpp
+	$(COMPILER) -c -o objfiles/compress.o mk/base_mk/compress.cpp $(CPPFLAGS)
 
 objfiles/crypto.o: cry/crypto.cpp
 	$(COMPILER) -c -o objfiles/crypto.o cry/crypto.cpp $(CPPFLAGS)

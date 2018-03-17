@@ -30,6 +30,7 @@ public:
                                             std::uint32_t code_begin);
   std::vector<uint8_t> get_protected_data();
   std::uint64_t get_real_image_begin();
+  std::uint64_t get_real_image_size();
   std::uint64_t get_begin_of_stub();
   std::uint64_t get_sections_vs();
   std::uint64_t get_image_vs();

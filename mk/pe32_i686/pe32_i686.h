@@ -4,11 +4,13 @@
 #include <eg/i8086/i686/i686.h>
 #include <ld/pe/pe32/pe32.h>
 #include <mk/base_mk/base_mk.h>
+#include <mk/base_mk/compress.h>
 
 namespace mk {
 class pe32_i686 : public base_mk {
 protected:
   eg::i8086::i686 e;
+  lzo_compress cmpr;
   ld::pe::pe32 *get_ld();
   void write_header(std::vector<std::uint8_t> header);
   void write_data(std::vector<std::uint8_t> *data);

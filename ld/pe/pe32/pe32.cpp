@@ -209,6 +209,10 @@ std::vector<uint8_t> pe32::get_protected_data() {
 std::uint64_t pe32::get_real_image_begin() {
   return static_cast<std::uint64_t>(get_section_header(0)->virtual_address);
 }
+
+std::uint64_t pe32::get_real_image_size() {
+  return image.size() - static_cast<std::uint64_t>(get_section_header(0)->virtual_address);
+}
 std::uint64_t pe32::get_begin_of_stub() {
 
   std::uint64_t size = image.size();

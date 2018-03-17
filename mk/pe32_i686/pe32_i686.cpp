@@ -1,6 +1,7 @@
 #include <cry/crypto.h>
 #include <mk/pe32_i686/pe32_i686.h>
 
+
 namespace mk {
 pe32_i686::pe32_i686() : base_mk() {}
 pe32_i686::pe32_i686(fs::out_file *out_file) : base_mk(out_file) {}
@@ -388,33 +389,45 @@ std::uint32_t pe32_i686::build_code(std::vector<std::uint8_t> *stub,
   e.set_base(get_ld()->get_begin_of_stub());
   e.init_state();
 
+  e.add_data("image", data);
+
   e.start_frame("general");
   e.copy_fundamental();
 
   e.start_segment("begin");
   e.bsp("ebp_", eg::i8086::ebp);
-  e.f("push_rd", e.g("ebp_"));
+  e.f(e.gg({"fu"}), "push_rd", e.g("ebp_"));
   e.bsp("esp_", eg::i8086::esp);
-  e.f("mov_rd_rd", e.g("ebp_"), e.g("esp_"));
-  e.f("sub_rd_vd", e.g("esp_"), e.frszd());
+  e.f(e.gg({"fu"}), "mov_rd_rd", e.g("ebp_"), e.g("esp_"));
+  e.f(e.gg({"fu"}), "sub_rd_vd", e.g("esp_"), e.frszd());
   e.fr("esp_");
-  e.f("push_vd", std::uint64_t(0x30));
+  e.f(e.gg({"fu"}), "push_vd", std::uint64_t(0x30));
   e.bf("shift", "common");
-  e.f("pop_rd", e.g("shift"));
+  e.f(e.gg({"fu"}), "pop_rd", e.g("shift"));
   e.bsp("fs_", eg::i8086::fs);
-  e.f("mov_rd_serd", e.g("shift"), e.g("fs_"), e.g("shift"));
+  e.f(e.gg({"fu"}), "mov_rd_serd", e.g("shift"), e.g("fs_"), e.g("shift"));
   e.fr("fs_");
-  e.f("mov_rd_smd", e.g("shift"), e.g("shift"), "+", std::uint64_t(0x8));
-  e.f("mov_smd_rd", e.g("ebp_"), "-", e.vshd("base"), e.g("shift"));
+  e.f(e.gg({"fu"}), "mov_rd_smd", e.g("shift"), e.g("shift"), "+", std::uint64_t(0x8));
+  e.f(e.gg({"fu"}), "mov_smd_rd", e.g("ebp_"), "-", e.vshd("base"), e.g("shift"));
   e.fr("shift");
-  e.f("store_abs", e.vshd("target"), e.shd("tmp"));
-  e.f("store_vd", e.vshd("count"), e.fszd("tmp"));
-  e.f("store_abs", e.vshd("key_addr"), e.shd("some_key"));
-  e.f("invoke", e.shd("aes_decrypt"));
+  e.f("store_abs", e.vshd("target"), e.shd("image"));
+  e.f("store_abs", e.vshd("value"), get_ld()->get_real_image_begin());
+  e.f("invoke", e.shd("uncompress"));
+  e.f("store_abs", e.vshd("target"), get_ld()->get_real_image_begin());
+  e.f("store_vd", e.vshd("count"), get_ld()->get_real_image_size());
+  e.f("store_vb", e.vshd("crc_switch"), std::uint64_t(0));
+  e.f("invoke", e.shd("crc"));
+  e.bf("lolo", "common");
+  e.f("load_rd", e.g("lolo"), e.vshd("result"));
+  e.fr("lolo");
+  // e.f("store_abs", e.vshd("target"), e.shd("tmp"));
+  // e.f("store_vd", e.vshd("count"), e.fszd("tmp"));
+  // e.f("store_abs", e.vshd("key_addr"), e.shd("some_key"));
+  // e.f("invoke", e.shd("aes_decrypt"));
   e.bsp("esp_", eg::i8086::esp);
-  e.f("mov_rd_rd", e.g("esp_"), e.g("ebp_"));
-  e.f("pop_rd", e.g("ebp_"));
-  e.f("ret");
+  e.f(e.gg({"fu"}), "mov_rd_rd", e.g("esp_"), e.g("ebp_"));
+  e.f(e.gg({"fu"}), "pop_rd", e.g("ebp_"));
+  e.f(e.gg({"fu"}), "ret");
   e.fr("ebp_");
   e.fr("esp_");
 
@@ -528,6 +541,7 @@ void pe32_i686::make() {
   file->open();
   std::vector<uint8_t> data = get_ld()->get_protected_data();
   std::vector<uint8_t> stub;
+  cmpr.compress(data);
   std::uint32_t begin = build_code(&stub, &data);
   write_header(get_ld()->get_rebuilded_header(stub.size(), begin));
   get_ld()->resize_with_file_align(&stub);
