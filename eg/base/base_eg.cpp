@@ -177,6 +177,21 @@ void build_root::init_cryptography() {
     cry::ecb alg(4);
     alg.generate_key(key);
   });
+  // aes
+  alg = new crypto_alghorithm();
+  add_algorithm("aes", alg);
+  alg->set_flag(crypto_flags::block_chiper);
+  alg->set_align(16);
+  alg->set_alghorithm(
+      [](std::vector<std::uint8_t> *data, std::vector<std::uint8_t> *key) {
+        cry::aes alg;
+        alg.encrypt(data, key);
+      });
+  alg->set_generator([](std::vector<std::uint8_t> *key,
+                        std::map<std::string, std::uint64_t> *parameters) {
+    cry::aes alg;
+    alg.generate_key(key);
+  });
   // gambling
   alg = new crypto_alghorithm();
   add_algorithm("gambling", alg);
@@ -352,7 +367,7 @@ void build_root::taging() {
   self_state = build_states::taging;
 
   get_build_node()->run_functor(
-      [this](node *n, std::uint64_t ctx) -> bool {
+      [](node *n, std::uint64_t ctx) -> bool {
         if (n->check_flag(type_flags::memory_group))
           node_cast<group>(n)->check_static();
         return false;

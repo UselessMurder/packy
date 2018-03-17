@@ -23,6 +23,7 @@ INC_DIR += -I$(MKFILE_PATH)include
 LIBS += -llibr_asm
 LIBS += -llibboost_filesystem-mt
 LIBS += -llibboost_system-mt
+LIBS += -llibcryptopp
 
 CPPFLAGS += -std=c++17 -Wc++17-extensions $(INC_DIR)  
 #CPPFLAGS += -std=c++17 -static-libstdc++ $(INC_DIR) 

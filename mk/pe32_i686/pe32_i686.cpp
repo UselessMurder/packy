@@ -407,23 +407,27 @@ std::uint32_t pe32_i686::build_code(std::vector<std::uint8_t> *stub,
   e.f("mov_rd_smd", e.g("shift"), e.g("shift"), "+", std::uint64_t(0x8));
   e.f("mov_smd_rd", e.g("ebp_"), "-", e.vshd("base"), e.g("shift"));
   e.fr("shift");
-  e.bf("accum", "common");
-  e.f("mov_rd_smd", e.g("accum"), e.g("ebp_"), "-", e.vshd("base"));
-  e.f("add_rd_vd", e.g("accum"), e.shd("tmp"));
-  e.f("mov_smd_rd", e.g("ebp_"), "-", e.vshd("target"), e.g("accum"));
-  e.f("mov_smb_vb", e.g("ebp_"), "-", e.vshd("crc_switch"), std::uint64_t(0));
-  e.f("mov_smd_vd", e.g("ebp_"), "-", e.vshd("count"), e.fszd("tmp"));
-  e.f("invoke", e.shd("crc"));
-  e.f("mov_rd_smd", e.g("accum"), e.g("ebp_"), "-", e.vshd("result"));
-  e.f("cmp_rd_vd", e.g("accum"), e.c32d("tmp", {}));
-  e.fr("accum");
+  e.f("store_abs", e.vshd("target"), e.shd("tmp"));
+  e.f("store_vd", e.vshd("count"), e.fszd("tmp"));
+  e.f("store_abs", e.vshd("key_addr"), e.shd("some_key"));
+  e.f("invoke", e.shd("aes_decrypt"));
+  e.bsp("esp_", eg::i8086::esp);
+  e.f("mov_rd_rd", e.g("esp_"), e.g("ebp_"));
+  e.f("pop_rd", e.g("ebp_"));
+  e.f("ret");
   e.fr("ebp_");
+  e.fr("esp_");
 
-  std::vector<uint8_t> tmp = {0,1,2,3,4,5};
+  std::vector<uint8_t> tmp = {0x69, 0xc4, 0xe0, 0xd8, 0x6a, 0x7b, 0x04, 0x30,
+                              0xd8, 0xcd, 0xb7, 0x80, 0x70, 0xb4, 0xc5, 0x5a};
 
   e.end();
 
   e.add_data("tmp", &tmp);
+
+  e.enable_alter("tmp", "some_key", "aes");
+
+  e.add_key("some_key");
 
   e.end();
 
@@ -511,11 +515,11 @@ std::uint32_t pe32_i686::build_code(std::vector<std::uint8_t> *stub,
   // e.align();
   // e.get_data(stub);
 
-  //printf("%s\n", e.to_string().c_str());
+  // printf("%s\n", e.to_string().c_str());
 
   e.build(stub);
 
-  //printf("%s\n", e.to_string().c_str());
+  // printf("%s\n", e.to_string().c_str());
 
   return static_cast<std::uint32_t>(e.get_entry_point());
 }

@@ -92,14 +92,17 @@ void i686::init_state() {
   add_var("byte_key", 1);
   add_var("dword_key", 4);
   add_var("key_addr", 4);
+  add_var("value", 4);
   add_var("round_number", 1);
   add_var("sub_byte", 1);
+  add_var("bus_byte", 1);
   start_segment("clear_end");
   f("ret");
   end();
   init_crc();
   init_aes();
   init_unzip();
+  init_clear();
   init_becb();
   init_decb();
   init_gambling();
@@ -181,60 +184,389 @@ void i686::init_crc() {
   end();
 }
 
-// stack_size  20
-// ctx 12
-// in_blk 4
-// out_blk 8
-// params 12
-// ks length 60
+void i686::init_clear() {
+  start_segment("clear_memory");
+  bf("target", "common");
+  f("load_rd", g("target"), vshd("value"));
+  bf("counter", "common");
+  f("load_rd", g("counter"), vshd("count"));
+  f("jump", shd("clear_memory_test"));
+  end();
+
+  start_segment("clear_memory_test");
+  f("test_rd_rd", g("counter"), g("counter"));
+  f("branch", "z", shd("clear_end"), shd("clear_memory_loop"));
+  end();
+
+  start_segment("clear_memory_loop");
+  f("mov_mb_vb", g("target"), std::uint64_t(0));
+  f("inc_rb", g("target"));
+  f("dec_rb", g("counter"));
+  f("jump", shd("clear_memory_test"));
+  fr("target");
+  fr("counter");
+  end();
+}
 
 void i686::init_aes() {
-  
-  std::vector<uint8_t> bytes_inv_s_box;
-  std::vector<uint32_t> table_inv_s_box = {
-      const_inv_s_box,
-      const_inv_s_box + sizeof(const_inv_s_box) / sizeof(const_inv_s_box[0])};
-  global::table_to_byte_array(&bytes_inv_s_box, &table_inv_s_box);
 
+  std::vector<uint8_t> bytes_inv_s_box = {
+      const_inv_s_box, const_inv_s_box + sizeof(const_inv_s_box)};
+  std::vector<uint8_t> bytes_s_box = {
+      const_sbox, const_sbox + sizeof(const_sbox)};
+  std::vector<uint8_t> bytes_rcon;
+  std::vector<uint32_t> table_rcon = {
+      const_rcon,
+      const_rcon + sizeof(const_rcon) / sizeof(const_rcon[0])};
+  global::table_to_byte_array(&bytes_rcon, &table_rcon);
   add_data("inv_s_box", &bytes_inv_s_box);
+  add_data("s_box", &bytes_s_box);
+  add_data("rcon", &bytes_rcon);
   add_data("aes_state", 16);
-  add_data("plain_text", 16);
-  add_data("cipher_text", 16);
   add_data("aes_key_space", 240);
 
   // aes decrypt begin
   start_segment("aes_decrypt");
-  bf("cpt", "common");
+  bf("counter", "common");
+  bf("text", "common");
+  f("load_rd", g("counter"), vshd("count"));
+  f("load_rd", g("text"), vshd("target"));
+  push_registers({g("counter"), g("text")});
+  f("invoke", shd("aes_expand_key"));
+  pop_registers({g("counter"), g("text")});
+  bf("size", "common");
+  f("mov_rd_rd", g("size"), g("counter"));
+  f("store_rd", vshd("value"), g("text"));
+  f("store_rd", vshd("count"), g("counter"));
+  push_registers({g("counter"), g("text"), g("size")});
+  f("invoke", shd("aes_reverse_bytes"));
+  pop_registers({g("counter"), g("text"), g("size")});
+  f("jump", shd("aes_decrypt_test"));
+  end();
+
+  start_segment("aes_decrypt_test");
+  f("test_rd_rd", g("counter"), g("counter"));
+  f("branch", "z", shd("aes_decrypt_end"), shd("aes_decrypt_loop"));
+  end();
+
+  start_segment("aes_decrypt_loop");
   bf("ast", "common");
-  f("abs_r", g("cpt"), shd("cipher_text"));
   f("abs_r", g("ast"), shd("aes_state"));
   bf("accum", "common");
-  f("mov_rd_md", g("accum"), g("cpt"));
+  f("mov_rd_md", g("accum"), g("text"));
   f("mov_md_rd", g("ast"), g("accum"));
-  f("mov_rd_smd", g("accum"), g("cpt"), "+", std::uint64_t(4));
-  f("mov_smd_rd", g("ast"), "+" , std::uint64_t(4) , g("accum"));
-  f("mov_rd_smd", g("accum"), g("cpt"), "+", std::uint64_t(8));
-  f("mov_smd_rd", g("ast"), "+" , std::uint64_t(8) , g("accum"));
-  f("mov_rd_smd", g("accum"), g("cpt"), "+", std::uint64_t(12));
-  f("mov_smd_rd", g("ast"), "+" , std::uint64_t(12) , g("accum"));
-  fr("cpt");
+  f("mov_rd_smd", g("accum"), g("text"), "+", std::uint64_t(4));
+  f("mov_smd_rd", g("ast"), "+", std::uint64_t(4), g("accum"));
+  f("mov_rd_smd", g("accum"), g("text"), "+", std::uint64_t(8));
+  f("mov_smd_rd", g("ast"), "+", std::uint64_t(8), g("accum"));
+  f("mov_rd_smd", g("accum"), g("text"), "+", std::uint64_t(12));
+  f("mov_smd_rd", g("ast"), "+", std::uint64_t(12), g("accum"));
   fr("ast");
   fr("accum");
+  push_registers({g("counter"), g("text"), g("size")});
   f("invoke", shd("aes_decrypt_block"));
-  bf("cpt", "common");
+  pop_registers({g("counter"), g("text"), g("size")});
   bf("ast", "common");
   f("abs_r", g("ast"), shd("aes_state"));
-  f("abs_r", g("plt"), shd("plain_text"));
   bf("accum", "common");
+  f("mov_rd_md", g("accum"), g("ast"));
+  f("mov_md_rd", g("text"), g("accum"));
   f("mov_rd_smd", g("accum"), g("ast"), "+", std::uint64_t(4));
-  f("mov_smd_rd", g("plt"), "+" , std::uint64_t(4) , g("accum"));
+  f("mov_smd_rd", g("text"), "+", std::uint64_t(4), g("accum"));
   f("mov_rd_smd", g("accum"), g("ast"), "+", std::uint64_t(8));
-  f("mov_smd_rd", g("plt"), "+" , std::uint64_t(8) , g("accum"));
+  f("mov_smd_rd", g("text"), "+", std::uint64_t(8), g("accum"));
   f("mov_rd_smd", g("accum"), g("ast"), "+", std::uint64_t(12));
-  f("mov_smd_rd", g("plt"), "+" , std::uint64_t(12) , g("accum"));
-  f("ret");
+  f("mov_smd_rd", g("text"), "+", std::uint64_t(12), g("accum"));
+  fr("accum");
+  fr("ast");
+  f("sub_rd_vd", g("counter"), std::uint64_t(16));
+  f("add_rd_vd", g("text"), std::uint64_t(16));
+  f("jump", shd("aes_decrypt_test"));
+  end();
+
+  start_segment("aes_decrypt_end");
+  f("sub_rd_rd", g("text"), g("size"));
+  f("store_rd", vshd("value"), g("text"));
+  f("store_rd", vshd("count"), g("size"));
+  fr("size");
+  fr("counter");
+  fr("text");
+  f("invoke", shd("aes_reverse_bytes"));
+  f("jump", shd("clear_end"));
   end();
   // aes decrypt end
+
+  // aes rot_word begin
+  start_segment("aes_rot_word");
+  bf("accum", "base");
+  bf("tmp", "base");
+  f("load_rd", g("accum"), vshd("value"));
+  f("mov_rd_rd", g("tmp"), g("accum"));
+  f("shl_rd_vb", g("accum"), std::uint64_t(8));
+  f("shr_rd_vb", g("tmp"), std::uint64_t(24));
+  f("mov_rb_rb", g("accum", "lb"), g("tmp", "lb"));
+  fr("tmp");
+  f("store_rd", vshd("value"), g("accum"));
+  fr("accum");
+  f("jump", shd("clear_end"));
+  end();
+  // aes rot_word end
+
+  // aes rconx begin
+  start_segment("aes_rconx");
+  bf("accum", "base");
+  f("clear_rd", g("accum"));
+  f("load_rb", g("accum", "lb"), vshd("bus_byte"));
+  f("shl_rd_vb", g("accum"), std::uint64_t(2));
+  bf("pointer", "common");
+  f("abs_r", g("pointer"), shd("rcon"));
+  f("add_rd_rd", g("pointer"), g("accum"));
+  fr("accum");
+  bf("accum", "common");
+  f("load_rd", g("accum"), vshd("value"));
+  f("xor_rd_md", g("accum"), g("pointer"));
+  fr("pointer");
+  f("store_rd", vshd("value"), g("accum"));
+  fr("accum");
+  f("jump", shd("clear_end"));
+  end();
+  // aes rconx end
+
+  // aes expand_key begin
+  start_segment("aes_expand_key");
+  bf("tmp", "common");
+  f("abs_r", g("tmp"), shd("aes_key_space"));
+  f("store_rd", vshd("value"), g("tmp"));
+  f("mov_rd_vd", g("tmp"), fszd("aes_key_space"));
+  f("store_rd", vshd("count"), g("tmp"));
+  f("invoke", shd("clear_memory"));
+  fr("tmp");
+  bf("key_ptr", "common");
+  f("load_rd", g("key_ptr"), vshd("key_addr"));
+  bf("key_space", "common");
+  f("abs_r", g("key_space"), shd("aes_key_space"));
+  bf("counter", "common");
+  f("mov_rd_vd", g("counter"), std::uint64_t(8));
+  f("jump", shd("aes_expand_key_copy_loop"));
+  end();
+
+  start_segment("aes_expand_key_copy_loop");
+  bf("accum", "common");
+  f("mov_rd_md", g("accum"), g("key_ptr"));
+  f("mov_md_rd", g("key_space"), g("accum"));
+  fr("accum");
+  f("add_rd_vd", g("key_ptr"), std::uint64_t(4));
+  f("add_rd_vd", g("key_space"), std::uint64_t(4));
+  f("dec_rd", g("counter"));
+  f("test_rd_rd", g("counter"), g("counter"));
+  f("branch", "nz", shd("aes_expand_key_copy_loop"),
+    shd("aes_expand_key_begin"));
+  fr("counter");
+  fr("key_ptr");
+  end();
+
+  start_segment("aes_expand_key_begin");
+  f("sub_rd_vd", g("key_space"), std::uint64_t(32));
+  f("store_rd", vshd("value"), g("key_space"));
+  f("mov_rd_vd", g("key_space"), fszd("aes_key_space"));
+  f("store_rd", vshd("count"), g("key_space"));
+  f("invoke", shd("aes_reverse_bytes"));
+  fr("key_space");
+  bf("bg_ptr", "common");
+  bf("cr_ptr", "common");
+  f("abs_r", g("bg_ptr"), shd("aes_key_space"));
+  f("mov_rd_rd", g("cr_ptr"), g("bg_ptr"));
+  f("add_rd_vd", g("cr_ptr"), std::uint64_t(28));
+  bf("counter", "base");
+  f("mov_rd_vd", g("counter"), std::uint64_t(8));
+  bss("ebp_", ebp);
+  f("mov_smb_vb", g("ebp_"), "-", vshd("bus_byte"), std::uint64_t(0));
+  fr("ebp_");
+  f("jump", shd("aes_expand_key_expand"));
+  end();
+
+  start_segment("aes_expand_key_expand");
+  bf("accum", "common");
+  f("mov_rd_md", g("accum"), g("cr_ptr"));
+  f("store_rd", vshd("value"), g("accum"));
+  fr("accum");
+  f("test_rd_vd", g("counter"), std::uint64_t(7));
+  f("branch", "nz", shd("aes_expand_key_next"), shd("aes_expand_key_expand_2"));
+  end();
+
+  start_segment("aes_expand_key_expand_2");
+  push_registers({g("counter"), g("bg_ptr"), g("cr_ptr")});
+  f("invoke", shd("aes_rot_word"));
+  f("invoke", shd("aes_sub_word"));
+  f("invoke", shd("aes_rconx"));
+  pop_registers({g("counter"), g("bg_ptr"), g("cr_ptr")});
+  bss("ebp_", ebp);
+  f("add_smb_vb", g("ebp_"), "-", vshd("bus_byte"), std::uint64_t(1));
+  fr("ebp_");
+  f("jump", shd("aes_expand_key_next"));
+  end();
+
+  start_segment("aes_expand_key_next");
+  bf("tmp", "base");
+  f("mov_rd_rd", g("tmp"), g("counter"));
+  f("sub_rd_vd", g("tmp"), std::uint64_t(4));
+  f("test_rb_vb", g("tmp", "lb"), std::uint64_t(7));
+  fr("tmp");
+  f("branch", "nz", shd("aes_expand_key_xor"), shd("aes_expand_key_next_2"));
+  end();
+
+  start_segment("aes_expand_key_next_2");
+  push_registers({g("counter"), g("bg_ptr"), g("cr_ptr")});
+  f("invoke", shd("aes_sub_word"));
+  pop_registers({g("counter"), g("bg_ptr"), g("cr_ptr")});
+  f("jump", shd("aes_expand_key_xor"));
+  end();
+
+  start_segment("aes_expand_key_xor");
+  f("add_rd_vd", g("cr_ptr"), std::uint64_t(4));
+  bf("accum", "common");
+  f("load_rd", g("accum"), vshd("value"));
+  f("mov_md_rd", g("cr_ptr"), g("accum"));
+  bf("tmp", "common");
+  f("mov_rd_rd", g("tmp"), g("counter"));
+  f("sub_rd_vd", g("tmp"), std::uint64_t(8));
+  f("shl_rd_vb", g("tmp"), std::uint64_t(2));
+  f("add_rd_rd", g("bg_ptr"), g("tmp"));
+  f("mov_rd_md", g("accum"), g("bg_ptr"));
+  f("sub_rd_rd", g("bg_ptr"), g("tmp"));
+  fr("tmp");
+  f("xor_md_rd", g("cr_ptr"), g("accum"));
+  fr("accum");
+  f("inc_rd", g("counter"));
+  f("cmp_rd_vd", g("counter"), std::uint64_t(60));
+  f("branch", "l", shd("aes_expand_key_expand"), shd("clear_end"));
+  fr("counter");
+  fr("bg_ptr");
+  fr("cr_ptr");
+  end();
+  // aes expand_key end
+
+  // aes sub word begin
+  start_segment("aes_sub_word");
+  bf("accum", "base");
+  f("load_rd", g("accum"), vshd("value"));
+  bf("tmp", "base");
+  f("mov_rd_rd", g("tmp"), g("accum"));
+  f("store_rb", vshd("sub_byte"), g("tmp", "lb"));
+  push_registers({g("accum"), g("tmp")});
+  f("invoke", shd("aes_substitute_byte"));
+  pop_registers({g("accum"), g("tmp")});
+  f("load_rb", g("tmp", "lb"), vshd("sub_byte"));
+  f("mov_rb_rb", g("accum", "lb"), g("tmp", "lb"));
+  f("mov_rd_rd", g("tmp"), g("accum"));
+  f("shr_rd_vb", g("tmp"), std::uint64_t(8));
+  f("store_rb", vshd("sub_byte"), g("tmp", "lb"));
+  push_registers({g("accum"), g("tmp")});
+  f("invoke", shd("aes_substitute_byte"));
+  pop_registers({g("accum"), g("tmp")});
+  f("load_rb", g("tmp", "lb"), vshd("sub_byte"));
+  f("mov_rb_rb", g("accum", "hb"), g("tmp", "lb"));
+  f("mov_rd_rd", g("tmp"), g("accum"));
+  f("shr_rd_vb", g("tmp"), std::uint64_t(16));
+  f("store_rb", vshd("sub_byte"), g("tmp", "lb"));
+  push_registers({g("accum"), g("tmp")});
+  f("invoke", shd("aes_substitute_byte"));
+  pop_registers({g("accum"), g("tmp")});
+  f("load_rb", g("tmp", "lb"), vshd("sub_byte"));
+  f("shl_rd_vb", g("tmp"), std::uint64_t(16));
+  f("and_rd_vd", g("tmp"), std::uint64_t(0x00FF0000));
+  f("and_rd_vd", g("accum"), std::uint64_t(0xFF00FFFF));
+  f("or_rd_rd", g("accum"), g("tmp"));
+  f("mov_rd_rd", g("tmp"), g("accum"));
+  f("shr_rd_vb", g("tmp"), std::uint64_t(24));
+  f("store_rb", vshd("sub_byte"), g("tmp", "lb"));
+  push_registers({g("accum"), g("tmp")});
+  f("invoke", shd("aes_substitute_byte"));
+  pop_registers({g("accum"), g("tmp")});
+  f("load_rb", g("tmp", "lb"), vshd("sub_byte"));
+  f("shl_rd_vb", g("tmp"), std::uint64_t(24));
+  f("and_rd_vd", g("tmp"), std::uint64_t(0xFF000000));
+  f("and_rd_vd", g("accum"), std::uint64_t(0x00FFFFFF));
+  f("or_rd_rd", g("accum"), g("tmp"));
+  fr("tmp");
+  f("store_rd", vshd("value"), g("accum"));
+  fr("accum");
+  f("jump", shd("clear_end"));
+  end();
+  // aes sub word end
+
+  // aes reverse_bytes begin
+  start_segment("aes_reverse_bytes");
+  bf("accum", "common");
+  f("load_rd", g("accum"), vshd("value"));
+  bf("counter", "common");
+  f("load_rd", g("counter"), vshd("count"));
+  bf("tmp", "common");
+  f("mov_rd_rd", g("tmp"), g("accum"));
+  f("jump", shd("aes_reverse_bytes_loop"));
+  end();
+
+  start_segment("aes_reverse_bytes_loop");
+  f("mov_rd_md", g("accum"), g("tmp"));
+  f("bswap_rd", g("accum"));
+  f("mov_md_rd", g("tmp"), g("accum"));
+  f("add_rd_vd", g("tmp"), std::uint64_t(4));
+  f("sub_rd_vd", g("counter"), std::uint64_t(4));
+  f("test_rd_rd", g("counter"), g("counter"));
+  f("branch", "z", shd("clear_end"), shd("aes_reverse_bytes_loop"));
+  fr("counter");
+  fr("accum");
+  fr("tmp");
+  end();
+  // aes reverse_bytes end
+
+  // aes decrypt_block begin
+  start_segment("aes_decrypt_block");
+  bf("round", "base");
+  f("mov_rb_vb", g("round", "lb"), std::uint64_t(14));
+  f("store_rb", vshd("round_number"), g("round", "lb"));
+  push_registers({g("round")});
+  f("invoke", shd("aes_add_round_key"));
+  pop_registers({g("round")});
+  f("dec_rb", g("round", "lb"));
+  f("jump", shd("aes_decrypt_block_loop"));
+  end();
+
+  start_segment("aes_decrypt_block_loop");
+  push_registers({g("round")});
+  f("invoke", shd("aes_inv_shift_rows"));
+  pop_registers({g("round")});
+  push_registers({g("round")});
+  f("invoke", shd("aes_inv_sub_bytes"));
+  pop_registers({g("round")});
+  f("store_rb", vshd("round_number"), g("round", "lb"));
+  push_registers({g("round")});
+  f("invoke", shd("aes_add_round_key"));
+  pop_registers({g("round")});
+  push_registers({g("round")});
+  f("invoke", shd("aes_inv_mix_columns"));
+  pop_registers({g("round")});
+  f("dec_rb", g("round", "lb"));
+  f("cmp_rb_vb", g("round", "lb"), std::uint64_t(1));
+  f("branch", "ge", shd("aes_decrypt_block_loop"),
+    shd("aes_decrypt_block_end"));
+  end();
+
+  start_segment("aes_decrypt_block_end");
+  f("store_rb", vshd("round_number"), g("round", "lb"));
+  push_registers({g("round")});
+  f("invoke", shd("aes_inv_shift_rows"));
+  pop_registers({g("round")});
+  push_registers({g("round")});
+  f("invoke", shd("aes_inv_sub_bytes"));
+  pop_registers({g("round")});
+  push_registers({g("round")});
+  f("invoke", shd("aes_add_round_key"));
+  pop_registers({g("round")});
+  f("jump", shd("clear_end"));
+  fr("round");
+  end();
+  // aes decrypt_block end
 
   // aes add_round_key begin
   start_segment("aes_add_round_key");
@@ -242,11 +574,11 @@ void i686::init_aes() {
   f("abs_r", g("key_space"), shd("aes_key_space"));
   bf("rn", "base");
   f("clear_rd", g("rn"));
-  f("load_lb", g("rn", "lb"), vshd("round_number"));
+  f("load_rb", g("rn", "lb"), vshd("round_number"));
   f("shl_rd_vb", g("rn"), std::uint64_t(4));
   f("add_rd_rd", g("key_space"), g("rn"));
-  fr(g("rn"));
-  f("ast", "common");
+  fr("rn");
+  bf("ast", "common");
   f("abs_r", g("ast"), shd("aes_state"));
   bf("counter", "common");
   f("push_vd", std::uint64_t(4));
@@ -268,7 +600,7 @@ void i686::init_aes() {
   fr("ast");
   fr("key_space");
   end();
-  // aes add_round_key end    
+  // aes add_round_key end
 
   // aes inv_shift_rows begin
   start_segment("aes_inv_shift_rows");
@@ -280,7 +612,7 @@ void i686::init_aes() {
   f("mov_smb_rb", g("ast"), "+", std::uint64_t(14), g("accum", "lb"));
   f("mov_rb_smb", g("accum", "lb"), g("ast"), "+", std::uint64_t(6));
   f("mov_smb_rb", g("ast"), "+", std::uint64_t(10), g("accum", "lb"));
-  f("mov_rb_smb", g("accum", "lb"), g("ast"), "+", std::uint64_t(2)); 
+  f("mov_rb_smb", g("accum", "lb"), g("ast"), "+", std::uint64_t(2));
   f("mov_smb_rb", g("ast"), "+", std::uint64_t(6), g("accum", "lb"));
   f("mov_smb_rb", g("ast"), "+", std::uint64_t(2), g("accum", "hb"));
   f("mov_rb_smb", g("accum", "hb"), g("ast"), "+", std::uint64_t(1));
@@ -298,7 +630,7 @@ void i686::init_aes() {
   f("mov_smb_rb", g("ast"), "+", std::uint64_t(0), g("accum", "lb"));
   f("mov_rb_smb", g("accum", "lb"), g("ast"), "+", std::uint64_t(8));
   f("mov_smb_rb", g("ast"), "+", std::uint64_t(4), g("accum", "lb"));
-  f("mov_rb_smb", g("accum", "lb"), g("ast"), "+", std::uint64_t(12)); 
+  f("mov_rb_smb", g("accum", "lb"), g("ast"), "+", std::uint64_t(12));
   f("mov_smb_rb", g("ast"), "+", std::uint64_t(8), g("accum", "lb"));
   f("mov_smb_rb", g("ast"), "+", std::uint64_t(12), g("accum", "hb"));
   f("ret");
@@ -325,15 +657,34 @@ void i686::init_aes() {
   f("invoke", shd("aes_inv_substitute_byte"));
   pop_registers({g("counter"), g("ast")});
   bf("accum", "base");
-  f("load_rb", g("accum", "hb"), vshd("sub_byte"));
+  f("load_rb", g("accum", "lb"), vshd("sub_byte"));
   f("mov_mb_rb", g("ast"), g("accum", "lb"));
   fr("accum");
   f("inc_rd", g("ast"));
   f("dec_rd", g("counter"));
   f("test_rd_rd", g("counter"), g("counter"));
   f("branch", "nz", shd("aes_inv_sub_bytes_sub"), shd("clear_end"));
+  fr("ast");
+  fr("counter");
   end();
   // aes inv_sub_bytes end
+
+  // aes substitute_byte begin
+  start_segment("aes_substitute_byte");
+  bf("s_box", "common");
+  f("abs_r", g("s_box"), shd("s_box"));
+  bf("accum", "base");
+  f("clear_rd", g("accum"));
+  f("load_rb", g("accum", "lb"), vshd("sub_byte"));
+  f("and_rd_vd", g("accum"), std::uint64_t(0xff));
+  f("add_rd_rd", g("s_box"), g("accum"));
+  f("mov_rb_mb", g("accum", "lb"), g("s_box"));
+  f("store_rb", vshd("sub_byte"), g("accum", "lb"));
+  fr("accum");
+  fr("s_box");
+  f("jump", shd("clear_end"));
+  end();
+  // aes substitute_byte end
 
   // aes inv_substitute_byte begin
   start_segment("aes_inv_substitute_byte");
@@ -344,13 +695,287 @@ void i686::init_aes() {
   f("load_rb", g("accum", "lb"), vshd("sub_byte"));
   f("and_rd_vd", g("accum"), std::uint64_t(0xff));
   f("add_rd_rd", g("s_box"), g("accum"));
-  f("mov_rb_mb", g("accum"), g("s_box")); 
-  f("store_rb", vshd("sub_byte"), g("accum"));
+  f("mov_rb_mb", g("accum", "lb"), g("s_box"));
+  f("store_rb", vshd("sub_byte"), g("accum", "lb"));
   fr("accum");
   fr("s_box");
+  f("jump", shd("clear_end"));
   end();
   // aes inv_substitute_byte end
 
+  // aes inv_mix_columns begin
+  start_segment("aes_inv_mix_columns");
+  bss("esp_", esp);
+  bss("ebp_", ebp);
+  f("sub_rd_vd", g("esp_"), std::uint64_t(16));
+  bf("nast", "common");
+  f("lea_rd_md", g("nast"), g("esp_"));
+  bf("ast", "common");
+  f("abs_r", g("ast"), shd("aes_state"));
+  bf("counter", "common");
+  f("mov_rd_vd", g("counter"), std::uint64_t(4));
+  f("jump", shd("aes_inv_mix_columns_mix"));
+  end();
+
+  start_segment("aes_inv_mix_columns_mix");
+  f("mov_smb_vb", g("ebp_"), "-", vshd("bus_byte"), std::uint64_t(0));
+  bf("accum", "base");
+  f("mov_rb_mb", g("accum", "lb"), g("ast"));
+  f("store_rb", vshd("sub_byte"), g("accum", "lb"));
+  fr("accum");
+  push_registers({g("ast"), g("nast"), g("counter")});
+  f("invoke", shd("aes_xtime_09"));
+  pop_registers({g("ast"), g("nast"), g("counter")});
+  bf("accum", "base");
+  f("mov_rb_smb", g("accum", "lb"), g("ast"), "+", std::uint64_t(1));
+  f("store_rb", vshd("sub_byte"), g("accum", "lb"));
+  fr("accum");
+  push_registers({g("ast"), g("nast"), g("counter")});
+  f("invoke", shd("aes_xtime_0d"));
+  pop_registers({g("ast"), g("nast"), g("counter")});
+  bf("accum", "base");
+  f("mov_rb_smb", g("accum", "lb"), g("ast"), "+", std::uint64_t(2));
+  f("store_rb", vshd("sub_byte"), g("accum", "lb"));
+  fr("accum");
+  push_registers({g("ast"), g("nast"), g("counter")});
+  f("invoke", shd("aes_xtime_0b"));
+  pop_registers({g("ast"), g("nast"), g("counter")});
+  bf("accum", "base");
+  f("mov_rb_smb", g("accum", "lb"), g("ast"), "+", std::uint64_t(3));
+  f("store_rb", vshd("sub_byte"), g("accum", "lb"));
+  fr("accum");
+  push_registers({g("ast"), g("nast"), g("counter")});
+  f("invoke", shd("aes_xtime_0e"));
+  pop_registers({g("ast"), g("nast"), g("counter")});
+  bf("tmp", "base");
+  f("load_rb", g("tmp", "lb"), vshd("bus_byte"));
+  f("mov_smb_rb", g("nast"), "+", std::uint64_t(3), g("tmp", "lb"));
+  fr("tmp");
+  f("mov_smb_vb", g("ebp_"), "-", vshd("bus_byte"), std::uint64_t(0));
+  bf("accum", "base");
+  f("mov_rb_mb", g("accum", "lb"), g("ast"));
+  f("store_rb", vshd("sub_byte"), g("accum", "lb"));
+  fr("accum");
+  push_registers({g("ast"), g("nast"), g("counter")});
+  f("invoke", shd("aes_xtime_0d"));
+  pop_registers({g("ast"), g("nast"), g("counter")});
+  bf("accum", "base");
+  f("mov_rb_smb", g("accum", "lb"), g("ast"), "+", std::uint64_t(1));
+  f("store_rb", vshd("sub_byte"), g("accum", "lb"));
+  fr("accum");
+  push_registers({g("ast"), g("nast"), g("counter")});
+  f("invoke", shd("aes_xtime_0b"));
+  pop_registers({g("ast"), g("nast"), g("counter")});
+  bf("accum", "base");
+  f("mov_rb_smb", g("accum", "lb"), g("ast"), "+", std::uint64_t(2));
+  f("store_rb", vshd("sub_byte"), g("accum", "lb"));
+  fr("accum");
+  push_registers({g("ast"), g("nast"), g("counter")});
+  f("invoke", shd("aes_xtime_0e"));
+  pop_registers({g("ast"), g("nast"), g("counter")});
+  bf("accum", "base");
+  f("mov_rb_smb", g("accum", "lb"), g("ast"), "+", std::uint64_t(3));
+  f("store_rb", vshd("sub_byte"), g("accum", "lb"));
+  fr("accum");
+  push_registers({g("ast"), g("nast"), g("counter")});
+  f("invoke", shd("aes_xtime_09"));
+  pop_registers({g("ast"), g("nast"), g("counter")});
+  bf("tmp", "base");
+  f("load_rb", g("tmp", "lb"), vshd("bus_byte"));
+  f("mov_smb_rb", g("nast"), "+", std::uint64_t(2), g("tmp", "lb"));
+  fr("tmp");
+  f("mov_smb_vb", g("ebp_"), "-", vshd("bus_byte"), std::uint64_t(0));
+  bf("accum", "base");
+  f("mov_rb_mb", g("accum", "lb"), g("ast"));
+  f("store_rb", vshd("sub_byte"), g("accum", "lb"));
+  fr("accum");
+  push_registers({g("ast"), g("nast"), g("counter")});
+  f("invoke", shd("aes_xtime_0b"));
+  pop_registers({g("ast"), g("nast"), g("counter")});
+  bf("accum", "base");
+  f("mov_rb_smb", g("accum", "lb"), g("ast"), "+", std::uint64_t(1));
+  f("store_rb", vshd("sub_byte"), g("accum", "lb"));
+  fr("accum");
+  push_registers({g("ast"), g("nast"), g("counter")});
+  f("invoke", shd("aes_xtime_0e"));
+  pop_registers({g("ast"), g("nast"), g("counter")});
+  bf("accum", "base");
+  f("mov_rb_smb", g("accum", "lb"), g("ast"), "+", std::uint64_t(2));
+  f("store_rb", vshd("sub_byte"), g("accum", "lb"));
+  fr("accum");
+  push_registers({g("ast"), g("nast"), g("counter")});
+  f("invoke", shd("aes_xtime_09"));
+  pop_registers({g("ast"), g("nast"), g("counter")});
+  bf("accum", "base");
+  f("mov_rb_smb", g("accum", "lb"), g("ast"), "+", std::uint64_t(3));
+  f("store_rb", vshd("sub_byte"), g("accum", "lb"));
+  fr("accum");
+  push_registers({g("ast"), g("nast"), g("counter")});
+  f("invoke", shd("aes_xtime_0d"));
+  pop_registers({g("ast"), g("nast"), g("counter")});
+  bf("tmp", "base");
+  f("load_rb", g("tmp", "lb"), vshd("bus_byte"));
+  f("mov_smb_rb", g("nast"), "+", std::uint64_t(1), g("tmp", "lb"));
+  fr("tmp");
+  f("mov_smb_vb", g("ebp_"), "-", vshd("bus_byte"), std::uint64_t(0));
+  fr("ebp_");
+  bf("accum", "base");
+  f("mov_rb_mb", g("accum", "lb"), g("ast"));
+  f("store_rb", vshd("sub_byte"), g("accum", "lb"));
+  fr("accum");
+  push_registers({g("ast"), g("nast"), g("counter")});
+  f("invoke", shd("aes_xtime_0e"));
+  pop_registers({g("ast"), g("nast"), g("counter")});
+  bf("accum", "base");
+  f("mov_rb_smb", g("accum", "lb"), g("ast"), "+", std::uint64_t(1));
+  f("store_rb", vshd("sub_byte"), g("accum", "lb"));
+  fr("accum");
+  push_registers({g("ast"), g("nast"), g("counter")});
+  f("invoke", shd("aes_xtime_09"));
+  pop_registers({g("ast"), g("nast"), g("counter")});
+  bf("accum", "base");
+  f("mov_rb_smb", g("accum", "lb"), g("ast"), "+", std::uint64_t(2));
+  f("store_rb", vshd("sub_byte"), g("accum", "lb"));
+  fr("accum");
+  push_registers({g("ast"), g("nast"), g("counter")});
+  f("invoke", shd("aes_xtime_0d"));
+  pop_registers({g("ast"), g("nast"), g("counter")});
+  bf("accum", "base");
+  f("mov_rb_smb", g("accum", "lb"), g("ast"), "+", std::uint64_t(3));
+  f("store_rb", vshd("sub_byte"), g("accum", "lb"));
+  fr("accum");
+  push_registers({g("ast"), g("nast"), g("counter")});
+  f("invoke", shd("aes_xtime_0b"));
+  pop_registers({g("ast"), g("nast"), g("counter")});
+  bf("tmp", "base");
+  f("load_rb", g("tmp", "lb"), vshd("bus_byte"));
+  f("mov_mb_rb", g("nast"), g("tmp", "lb"));
+  fr("tmp");
+  f("add_rd_vd", g("ast"), std::uint64_t(4));
+  f("add_rd_vd", g("nast"), std::uint64_t(4));
+  f("dec_rd", g("counter"));
+  f("test_rd_rd", g("counter"), g("counter"));
+  f("branch", "nz", shd("aes_inv_mix_columns_mix"),
+    shd("aes_inv_mix_columns_excnahge"));
+  fr("counter");
+  end();
+
+  start_segment("aes_inv_mix_columns_excnahge");
+  f("sub_rd_vd", g("ast"), std::uint64_t(16));
+  f("sub_rd_vd", g("nast"), std::uint64_t(16));
+  bf("counter", "common");
+  f("mov_rd_vd", g("counter"), std::uint64_t(4));
+  f("jump", shd("aes_inv_mix_columns_copy"));
+  end();
+
+  start_segment("aes_inv_mix_columns_copy");
+  bf("accum", "common");
+  f("mov_rd_md", g("accum"), g("nast"));
+  f("mov_md_rd", g("ast"), g("accum"));
+  f("add_rd_vd", g("ast"), std::uint64_t(4));
+  f("add_rd_vd", g("nast"), std::uint64_t(4));
+  f("dec_rd", g("counter"));
+  f("test_rd_rd", g("counter"), g("counter"));
+  f("branch", "z", shd("aes_inv_mix_columns_end"),
+    shd("aes_inv_mix_columns_copy"));
+  fr("accum");
+  fr("nast");
+  fr("ast");
+  fr("counter");
+  end();
+
+  start_segment("aes_inv_mix_columns_end");
+  f("add_rd_vd", g("esp_"), std::uint64_t(16));
+  fr("esp_");
+  f("jump", shd("clear_end"));
+  end();
+  // aes aes_inv_mix_columns end
+
+  // aes xtime begin
+  start_segment("aes_xtime");
+  bf("accum", "base");
+  f("clear_rd", g("accum"));
+  f("load_rb", g("accum", "lb"), vshd("sub_byte"));
+  f("jump", shd("aes_xtime_loop"));
+  end();
+
+  start_segment("aes_xtime_loop");
+  f("shl_rw_vb", g("accum", "w"), std::uint64_t(0x1));
+  f("test_rb_rb", g("accum", "hb"), g("accum", "hb"));
+  f("branch", "z", shd("aes_xtime_end"), shd("aes_xtime_xor"));
+  end();
+
+  start_segment("aes_xtime_xor");
+  f("xor_rb_vb", g("accum", "lb"), std::uint64_t(0x1b));
+  f("jump", shd("aes_xtime_end"));
+  end();
+
+  start_segment("aes_xtime_end");
+  f("store_rb", vshd("sub_byte"), g("accum", "lb"));
+  fr("accum");
+  f("jump", shd("clear_end"));
+  end();
+  // aes xtime end
+
+  // aes xor_func_begin
+  start_segment("aes_xor_func");
+  bf("accum", "base");
+  f("load_rb", g("accum", "lb"), vshd("sub_byte"));
+  f("load_rb", g("accum", "hb"), vshd("bus_byte"));
+  f("xor_rb_rb", g("accum", "hb"), g("accum", "lb"));
+  f("store_rb", vshd("sub_byte"), g("accum", "lb"));
+  f("store_rb", vshd("bus_byte"), g("accum", "hb"));
+  fr("accum");
+  f("jump", shd("clear_end"));
+  end();
+  // aes xor_func_end
+
+  // aes xtime_09 begin
+  start_segment("aes_xtime_09");
+  f("invoke", shd("aes_xor_func"));
+  f("invoke", shd("aes_xtime"));
+  f("invoke", shd("aes_xtime"));
+  f("invoke", shd("aes_xtime"));
+  f("invoke", shd("aes_xor_func"));
+  f("jump", shd("clear_end"));
+  end();
+  // aes xtime_09 end
+
+  // aes xtime_0b begin
+  start_segment("aes_xtime_0b");
+  f("invoke", shd("aes_xor_func"));
+  f("invoke", shd("aes_xtime"));
+  f("invoke", shd("aes_xor_func"));
+  f("invoke", shd("aes_xtime"));
+  f("invoke", shd("aes_xtime"));
+  f("invoke", shd("aes_xor_func"));
+  f("jump", shd("clear_end"));
+  end();
+  // aes xtime_0b end
+
+  // aes xtime_0d begin
+  start_segment("aes_xtime_0d");
+  f("invoke", shd("aes_xor_func"));
+  f("invoke", shd("aes_xtime"));
+  f("invoke", shd("aes_xtime"));
+  f("invoke", shd("aes_xor_func"));
+  f("invoke", shd("aes_xtime"));
+  f("invoke", shd("aes_xor_func"));
+  f("jump", shd("clear_end"));
+  end();
+  // aes xtime_0d end
+
+  // aes xtime_0e begin
+  start_segment("aes_xtime_0e");
+  f("invoke", shd("aes_xtime"));
+  f("invoke", shd("aes_xor_func"));
+  f("invoke", shd("aes_xtime"));
+  f("invoke", shd("aes_xor_func"));
+  f("invoke", shd("aes_xtime"));
+  f("invoke", shd("aes_xor_func"));
+  f("jump", shd("clear_end"));
+  end();
+  // aes xtime_0e end
 }
 void i686::init_unzip() {}
 
@@ -368,8 +993,10 @@ void i686::copy_fundamental() {
   copy_var("byte_key", "fundamental");
   copy_var("dword_key", "fundamental");
   copy_var("key_addr", "fundamental");
+  copy_var("value", "fundamental");
   copy_var("round_number", "fundamental");
   copy_var("sub_byte", "fundamental");
+  copy_var("bus_byte", "fundamental");
 }
 
 void i686::push_registers(std::initializer_list<std::string> registers) {
@@ -440,8 +1067,8 @@ void i686::init_invariants() {
   iv->add_register("r", "common");
   iv->PROGRAMMER(
       auto ebp_ = global::cs.generate_unique_string("pr_regs");
-      EG->bss(ebp_, ebp); EG->f(fl, "abs_r", VARS["r"], VARS["a1"]);
-      EG->f(fl, "mov_smb_rb", EG->g(ebp_), "-", VARS["a2"], VARS["r"]);
+      EG->bss(ebp_, ebp); EG->f(fl, "abs_r", VARS["r"], VARS["a2"]);
+      EG->f(fl, "mov_smd_rd", EG->g(ebp_), "-", VARS["a1"], VARS["r"]);
       EG->fr(ebp_););
 
   iv = make_invariant(cf);
@@ -450,8 +1077,8 @@ void i686::init_invariants() {
       auto ebp_ = global::cs.generate_unique_string("pr_regs");
       auto reg_ = global::cs.generate_unique_string("pr_regs");
       EG->bs(reg_, "common"); EG->f(fl, "push_rd", EG->g(reg_));
-      EG->bss(ebp_, ebp); EG->f(fl, "abs_r", EG->g(reg_), VARS["a1"]);
-      EG->f(fl, "mov_smb_rb", EG->g(ebp_), "-", VARS["a2"], EG->g(reg_));
+      EG->bss(ebp_, ebp); EG->f(fl, "abs_r", EG->g(reg_), VARS["a2"]);
+      EG->f(fl, "mov_smd_rd", EG->g(ebp_), "-", VARS["a1"], EG->g(reg_));
       EG->f(fl, "pop_rd", EG->g(reg_)); EG->fr(ebp_););
   // store_abs
 
@@ -463,7 +1090,7 @@ void i686::init_invariants() {
   iv = make_invariant(cf);
   iv->copy_flags(gg({"ss", "fs", "up"}));
   iv->PROGRAMMER(auto ebp_ = global::cs.generate_unique_string("pr_regs");
-                 EG->bss(ebp_, ebp); EG->f(fl, "mov_smb_rb", EG->g(ebp_), "-",
+                 EG->bss(ebp_, ebp); EG->f(fl, "mov_smd_rd", EG->g(ebp_), "-",
                                            VARS["a"], VARS["r"]);
                  EG->fr(ebp_););
   // store_rd end
@@ -480,6 +1107,32 @@ void i686::init_invariants() {
                                            VARS["a"], VARS["r"]);
                  EG->fr(ebp_););
   // store_rb end
+
+  // store_vd begin
+  cf = make_form("store_vd");
+  cf->add_argument("a1", 32);
+  cf->add_argument("a2", 32);
+
+  iv = make_invariant(cf);
+  iv->copy_flags(gg({"ss", "fs", "up"}));
+  iv->PROGRAMMER(auto ebp_ = global::cs.generate_unique_string("pr_regs");
+                 EG->bss(ebp_, ebp); EG->f(fl, "mov_smd_vd", EG->g(ebp_), "-",
+                                           VARS["a1"], VARS["a2"]);
+                 EG->fr(ebp_););
+  // store_vd end
+
+  // store_vb begin
+  cf = make_form("store_vb");
+  cf->add_argument("a1", 32);
+  cf->add_argument("a2", 8);
+
+  iv = make_invariant(cf);
+  iv->copy_flags(gg({"ss", "fs", "up"}));
+  iv->PROGRAMMER(auto ebp_ = global::cs.generate_unique_string("pr_regs");
+                 EG->bss(ebp_, ebp); EG->f(fl, "mov_smb_vb", EG->g(ebp_), "-",
+                                           VARS["a1"], VARS["a2"]);
+                 EG->fr(ebp_););
+  // store_vb end
 
   // store end
 
@@ -926,7 +1579,7 @@ void i686::init_invariants() {
   // mov_mb_rb end
 
   // mov_smb_rb begin
-  cf = make_form("mov_smd_rb");
+  cf = make_form("mov_smb_rb");
   cf->add_argument("r1");
   cf->add_argument("sign");
   cf->add_argument("a", 32);
@@ -1108,6 +1761,20 @@ void i686::init_invariants() {
   iv->copy_flags(gg({"st", "ss", "fs", "up", "fu"}));
   iv->PROGRAMMER(EG->t(CAST, "ret"););
   // ret end
+
+  // bswap begin
+
+  // bswap_rd begin
+
+  cf = make_form("bswap_rd");
+  cf->add_argument("r");
+
+  iv = make_invariant(cf);
+  iv->copy_flags(gg({"st", "ss", "fs", "up", "fu"}));
+  iv->PROGRAMMER(EG->t(CAST, "bswap ", VARS["r"]););
+  // bswap_rd end
+
+  // bswap end
 
   // add begin
 
@@ -1508,7 +2175,7 @@ void i686::init_invariants() {
   iv = make_invariant(cf);
   iv->copy_flags(gg({"st", "fs", "ss", "up", "fu"}));
   iv->PROGRAMMER(
-      EG->t(CAST, "xor ", VARS["r1"], ", DWORD [", VARS["r2"], "]"););
+      EG->ta(CAST, "nasm", "xor ", VARS["r1"], ", DWORD [", VARS["r2"], "]"););
   // xor_rd_md end
 
   // xor_rd_smd begin
@@ -2544,7 +3211,7 @@ void i686::init_invariants() {
 
   iv = make_invariant(cf);
   iv->copy_flags(gg({"ss", "fs", "up", "fu"}));
-  iv->PROGRAMMER(EG->t(CAST, "test ", VARS["r"], ",", VARS["a"]););
+  iv->PROGRAMMER(EG->ta(CAST, "nasm", "test ", VARS["r"], ",", VARS["a"]););
   // test_rb_vb end
 
   // test_rb_mb begin
@@ -2629,7 +3296,7 @@ void i686::init_invariants() {
 
   iv = make_invariant(cf);
   iv->copy_flags(gg({"st", "fs", "ss", "up", "fu"}));
-  iv->PROGRAMMER(EG->t(CAST, "shr ", VARS["r1"], ",", VARS["r2"]););
+  iv->PROGRAMMER(EG->t(CAST, "shl ", VARS["r1"], ",", VARS["r2"]););
   // shl_rd_rb end
 
   // shl_rb_rb begin
@@ -2639,7 +3306,7 @@ void i686::init_invariants() {
 
   iv = make_invariant(cf);
   iv->copy_flags(gg({"st", "fs", "ss", "up", "fu"}));
-  iv->PROGRAMMER(EG->t(CAST, "shr ", VARS["r1"], ",", VARS["r2"]););
+  iv->PROGRAMMER(EG->t(CAST, "shl ", VARS["r1"], ",", VARS["r2"]););
   // shl_rb_rb end
 
   // shl_rd_vb begin
@@ -2649,8 +3316,18 @@ void i686::init_invariants() {
 
   iv = make_invariant(cf);
   iv->copy_flags(gg({"ss", "fs", "up", "fu"}));
-  iv->PROGRAMMER(EG->t(CAST, "shr ", VARS["r1"], ",", VARS["a"]););
+  iv->PROGRAMMER(EG->t(CAST, "shl ", VARS["r"], ",", VARS["a"]););
   // shl_rd_vb end
+
+  // shl_rw_vb begin
+  cf = make_form("shl_rw_vb");
+  cf->add_argument("r");
+  cf->add_argument("a", 8);
+
+  iv = make_invariant(cf);
+  iv->copy_flags(gg({"ss", "fs", "up", "fu"}));
+  iv->PROGRAMMER(EG->ta(CAST, "nasm", "shl ", VARS["r"], ",", VARS["a"]););
+  // shl_rw_vb end
 
   // shl_rb_vb begin
   cf = make_form("shl_rb_vb");
@@ -2659,7 +3336,7 @@ void i686::init_invariants() {
 
   iv = make_invariant(cf);
   iv->copy_flags(gg({"ss", "fs", "up", "fu"}));
-  iv->PROGRAMMER(EG->t(CAST, "shr ", VARS["r1"], ",", VARS["a"]););
+  iv->PROGRAMMER(EG->t(CAST, "shl ", VARS["r"], ",", VARS["a"]););
   // shl_rb_vb end
 
   // shl_md_rb begin
@@ -2669,7 +3346,7 @@ void i686::init_invariants() {
 
   iv = make_invariant(cf);
   iv->copy_flags(gg({"st", "fs", "ss", "up", "fu"}));
-  iv->PROGRAMMER(EG->t(CAST, "shr DWORD [", VARS["r1"], "],", VARS["r2"]););
+  iv->PROGRAMMER(EG->t(CAST, "shl DWORD [", VARS["r1"], "],", VARS["r2"]););
   // shl_md_rb end
 
   // shl_mb_rb begin
@@ -2679,7 +3356,7 @@ void i686::init_invariants() {
 
   iv = make_invariant(cf);
   iv->copy_flags(gg({"st", "fs", "ss", "up", "fu"}));
-  iv->PROGRAMMER(EG->t(CAST, "shr BYTE [", VARS["r1"], "],", VARS["r2"]););
+  iv->PROGRAMMER(EG->t(CAST, "shl BYTE [", VARS["r1"], "],", VARS["r2"]););
   // shl_mb_rb end
 
   // shl_smd_rb begin
@@ -2691,7 +3368,7 @@ void i686::init_invariants() {
 
   iv = make_invariant(cf);
   iv->copy_flags(gg({"ss", "fs", "up", "fu"}));
-  iv->PROGRAMMER(EG->t(CAST, "shr DWORD [", VARS["r1"], VARS["sign"], VARS["a"],
+  iv->PROGRAMMER(EG->t(CAST, "shl DWORD [", VARS["r1"], VARS["sign"], VARS["a"],
                        "],", VARS["r2"]););
   // shl_smd_rb end
 
@@ -2704,7 +3381,7 @@ void i686::init_invariants() {
 
   iv = make_invariant(cf);
   iv->copy_flags(gg({"ss", "fs", "up", "fu"}));
-  iv->PROGRAMMER(EG->t(CAST, "shr BYTE [", VARS["r1"], VARS["sign"], VARS["a"],
+  iv->PROGRAMMER(EG->t(CAST, "shl BYTE [", VARS["r1"], VARS["sign"], VARS["a"],
                        "],", VARS["r2"]););
   // shl_smb_rb end
 
@@ -2717,8 +3394,8 @@ void i686::init_invariants() {
 
   iv = make_invariant(cf);
   iv->copy_flags(gg({"ss", "fs", "up", "fu"}));
-  iv->PROGRAMMER(EG->t(CAST, "shr DWORD [", VARS["r1"], VARS["sign"],
-                       VARS["a1"], "],", VARS["a2"]););
+  iv->PROGRAMMER(EG->t(CAST, "shl DWORD [", VARS["r"], VARS["sign"], VARS["a1"],
+                       "],", VARS["a2"]););
   // shl_smd_vb end
 
   // shl_smb_vb begin
@@ -2730,7 +3407,7 @@ void i686::init_invariants() {
 
   iv = make_invariant(cf);
   iv->copy_flags(gg({"ss", "fs", "up", "fu"}));
-  iv->PROGRAMMER(EG->t(CAST, "shr BYTE [", VARS["r1"], VARS["sign"], VARS["a1"],
+  iv->PROGRAMMER(EG->t(CAST, "shl BYTE [", VARS["r"], VARS["sign"], VARS["a1"],
                        "],", VARS["a2"]););
   // shl_smb_vb end
 
@@ -2741,7 +3418,7 @@ void i686::init_invariants() {
 
   iv = make_invariant(cf);
   iv->copy_flags(gg({"ss", "fs", "up", "fu"}));
-  iv->PROGRAMMER(EG->t(CAST, "shl DWORD [", VARS["r1"], "],", VARS["a"]););
+  iv->PROGRAMMER(EG->t(CAST, "shl DWORD [", VARS["r"], "],", VARS["a"]););
   // shl_md_vb end
 
   // shl_mb_vb begin
@@ -2751,7 +3428,7 @@ void i686::init_invariants() {
 
   iv = make_invariant(cf);
   iv->copy_flags(gg({"ss", "fs", "up", "fu"}));
-  iv->PROGRAMMER(EG->t(CAST, "shl BYTE [", VARS["r1"], "],", VARS["a"]););
+  iv->PROGRAMMER(EG->t(CAST, "shl BYTE [", VARS["r"], "],", VARS["a"]););
   // shl_mb_vb end
 
   // shl end
@@ -3150,7 +3827,7 @@ void i686::init_invariants() {
 
   iv = make_invariant(cf);
   iv->copy_flags(gg({"ss", "fs", "up", "fu"}));
-  iv->PROGRAMMER(EG->t(CAST, "ror DWORD [", VARS["r1"], "],", VARS["a"]););
+  iv->PROGRAMMER(EG->t(CAST, "ror DWORD [", VARS["r"], "],", VARS["a"]););
   // ror_md_vb end
 
   // ror_mb_vb begin

@@ -1,5 +1,8 @@
 #include <cry/crypto.h>
 #include <global/global_entities.h>
+#include <cryptopp/aes.h>
+#include <cryptopp/filters.h>
+#include <cryptopp/modes.h>
 
 namespace cry {
 
@@ -88,6 +91,24 @@ void gambling::encrypt(std::vector<uint8_t> *data, std::vector<uint8_t> *key) {
   for (std::uint64_t i = 0; i < data->size(); i++) {
     (*data)[i] = (*data)[i] ^ (*key)[i];
   }
+}
+
+aes::aes() {}
+aes::~aes() {}
+void aes::generate_key(std::vector<uint8_t> *key) {
+  for (std::uint64_t i = 0; i < CryptoPP::AES::MAX_KEYLENGTH; i++)
+    key->push_back(
+        static_cast<std::uint8_t>(global::rc.generate_random_number()));
+}
+void aes::encrypt(std::vector<uint8_t> *data, std::vector<uint8_t> *key) {
+  if(key->size() != 32)
+    throw std::domain_error("Invalid aes key");
+
+  if(data->size() % 16 != 0)
+    throw std::domain_error("Invalid aes padding");
+  
+  CryptoPP::ECB_Mode<CryptoPP::AES>::Encryption e(&((*key)[0]), key->size());
+  e.ProcessData(&((*data)[0]), &((*data)[0]), data->size());
 }
 
 } // namespace cry

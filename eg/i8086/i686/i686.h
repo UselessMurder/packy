@@ -14,6 +14,7 @@ private:
   void init_crc();
   void init_aes();
   void init_unzip();
+  void init_clear();
   void init_becb();
   void init_decb();
   void init_gambling();
