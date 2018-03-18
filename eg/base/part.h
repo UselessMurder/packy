@@ -65,8 +65,10 @@ public:
 
   void set_value(T current_value) {
     value = current_value;
-    for (auto br : brothers)
-      node_cast<simple_part<T>>(br)->set_value(current_value);
+    if(check_flag(type_flags::will_balanced)) {
+      for (auto br : brothers)
+        node_cast<simple_part<T>>(br)->set_value(current_value);
+    }
   }
 
   std::string to_string() {
@@ -87,7 +89,8 @@ public:
     } else {
       auto p = clone();
       p->set_parent(current_parent);
-      take_to_brotherhood(p);
+      if(check_flag(type_flags::will_balanced))
+        take_to_brotherhood(p);
     }
   }
 };

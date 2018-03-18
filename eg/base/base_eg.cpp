@@ -3,7 +3,7 @@
 
 #define LOOP_STUB                                                              \
   global::named_defer ignore_defer;                                            \
-  auto parent = find_node_by_flag<memory_piece>(p, type_flags::memory_code, \
+  auto parent = find_node_by_flag<memory_piece>(p, type_flags::memory_code,    \
                                                 {bypass_flags::parents});      \
   if (parent->check_flag(type_flags::memory_static)) {                         \
     parent->set_flag(type_flags::ignore);                                      \
@@ -69,7 +69,8 @@ void crypto_storage::prepare_key(memory_piece *piece, std::string key_name) {
   std::map<std::string, std::uint64_t> parameters;
 
   if (alg->check_flag(crypto_flags::variable_length_key)) {
-    if ((!piece->check_flag(type_flags::memory_static)) && (!piece->check_flag(type_flags::fixed)))
+    if ((!piece->check_flag(type_flags::memory_static)) &&
+        (!piece->check_flag(type_flags::fixed)))
       throw std::domain_error(
           "Cant`t generate key for non static piece with id: " +
           std::to_string(piece->get_object_id()));
@@ -151,7 +152,7 @@ build_root::~build_root() {
 void build_root::init_cryptography() {
   // one byte ecb
   crypto_alghorithm *alg = new crypto_alghorithm();
-  add_algorithm("one_byte_ecb", alg);
+  add_algorithm("byte_ecb", alg);
   alg->set_alghorithm(
       [](std::vector<std::uint8_t> *data, std::vector<std::uint8_t> *key) {
         cry::ecb alg(1);
@@ -242,10 +243,10 @@ void build_root::apply_alters(std::vector<uint8_t> *content,
 
 void build_root::apply_user_input(sin::context *ctx) {
   node *current =
-        find_node_by_flag<node>(this, type_flags::node_current,
-                                {bypass_flags::self, bypass_flags::childs});
+      find_node_by_flag<node>(this, type_flags::node_current,
+                              {bypass_flags::self, bypass_flags::childs});
 
-  if(!current->check_flag(type_flags::memory_group))
+  if (!current->check_flag(type_flags::memory_group))
     throw std::domain_error("Cant`t arrange code outside the group");
 
   if (ctx->get_form_name().empty()) {
@@ -385,7 +386,7 @@ void build_root::keyring() {
         return false;
       },
       {bypass_flags::childs}, global::cs.generate_unique_number("ctx"));
-  
+
   for (auto ep : enabled_pieces) {
     auto mp = find_node_by_name<memory_piece>(get_build_node(), ep.first,
                                               {bypass_flags::childs});
@@ -603,9 +604,9 @@ void build_root::start_top_segment(std::string segment_name) {
       find_node_by_flag<node>(get_build_node(), type_flags::node_current,
                               {bypass_flags::self, bypass_flags::childs});
   group *current_group = reinterpret_cast<group *>(0);
-  if(!current_node->check_flag(type_flags::build_frame)) {
+  if (!current_node->check_flag(type_flags::build_frame)) {
     current_node = find_node_by_flag<node>(
-      current_node, type_flags::build_frame, {bypass_flags::parents});
+        current_node, type_flags::build_frame, {bypass_flags::parents});
   }
   current_group = new group(current_node);
   current_group->set_flag(type_flags::fixed);
@@ -617,8 +618,8 @@ void build_root::start_top_segment(std::string segment_name) {
 void build_root::start_segment(std::string segment_name,
                                std::string frame_name) {
   duplicate_guard(segment_name);
-  frame *fr = find_node_by_name<frame>(
-      get_build_node(), frame_name, {bypass_flags::childs});
+  frame *fr = find_node_by_name<frame>(get_build_node(), frame_name,
+                                       {bypass_flags::childs});
   group *current_group = new group(fr);
   current_group->set_flag(type_flags::fixed);
   current_group->set_flag(type_flags::memory_top);
@@ -629,8 +630,9 @@ void build_root::start_segment(std::string segment_name,
 void build_root::fix_segment(std::string segment_name) {
   memory_piece *mp = find_node_by_name<memory_piece>(
       get_build_node(), segment_name, {bypass_flags::childs});
-  if(!mp->check_flag(type_flags::memory_group))
-    throw std::domain_error("Name: " + segment_name + " is not name of segment");
+  if (!mp->check_flag(type_flags::memory_group))
+    throw std::domain_error("Name: " + segment_name +
+                            " is not name of segment");
   mp->set_flag(type_flags::fixed);
 }
 
@@ -882,7 +884,7 @@ part *build_root::kd(std::string key_name, std::uint32_t bitness,
       std::vector<uint8_t> key;
       this->get_key(p->get_name_by_index(0), &key);
       std::uint32_t size = this->bitness_to_size(bitness);
-      if ((index * size) - ((size * index) + size) >
+      if (size >
           this->bitness_to_size(this->get_value<std::uint32_t>("bitness")))
         throw std::invalid_argument("Bitness is too hight for register size");
       if (key.size() < (size * index) + size)

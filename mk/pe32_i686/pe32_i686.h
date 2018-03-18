@@ -17,21 +17,20 @@ protected:
   void build_import_stub();
   std::uint32_t build_code(std::vector<std::uint8_t> *stub,
                            std::vector<std::uint8_t> *data);
-  // void search_expx_init_code();
-  // void get_apix_init_code();
-  // void error_exit_init_code();
+
+  void search_expx_init_code();
+  void get_apix_init_code();
+  void error_exit_init_code();
   // void end_init_code();
-  // void find_library_init_code();
-  // void load_function_init_code();
+  void find_library_init_code();
+  void load_function_init_code();
   // void restore_image_init_code();
 
-  // std::uint32_t get_KERNEL32_hash();
-
-  // std::uint32_t get_LoadLibrary_hash();
-  // std::uint32_t get_GetModuleHandle_hash();
-  // std::uint32_t get_GetProcAddress_hash();
-  // std::uint32_t get_ExitProcess_hash();
-  
+  std::uint32_t get_KERNEL32_hash();
+  std::uint32_t get_LoadLibrary_hash();
+  std::uint32_t get_GetModuleHandle_hash();
+  std::uint32_t get_GetProcAddress_hash();
+  std::uint32_t get_ExitProcess_hash();
 
 public:
   pe32_i686();

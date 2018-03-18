@@ -100,7 +100,7 @@ void i686::init_state() {
   f("ret");
   end();
   init_crc();
-//  init_aes();
+  //init_aes();
   init_uncompress();
   init_clear();
   init_becb();
@@ -113,7 +113,7 @@ void i686::init_crc() {
   start_segment("crc");
   bf("target", "common");
   bss("ebp_", ebp);
-  f("mov_rd_smd", g("target"), g("ebp_"), "-", vshd("target"));
+  f("load_rd", g("target"), vshd("target"));
   bf("result", "base");
   bf("accum", "base");
   f("clear_rd", g("result"));
@@ -168,7 +168,7 @@ void i686::init_crc() {
   end();
 
   start_segment("crc_test_zero");
-  f(gg({"fs"}), "sub_rb_vb", g("accum", "lb"), std::uint64_t(20));
+  f(gg({"fs"}), "sub_rb_vb", g("accum", "lb"), std::uint64_t(0x20));
   f("branch", "nz", shd("crc_loop"), shd("crc_end"));
   end();
 
@@ -177,7 +177,7 @@ void i686::init_crc() {
   fr("counter");
   fr("accum");
   fr("size");
-  f("mov_smd_rd", g("ebp_"), "-", vshd("result"), g("result"));
+  f("store_rd", vshd("result"), g("result"));
   fr("result");
   fr("ebp_");
   f("ret");
@@ -997,7 +997,7 @@ void i686::init_uncompress() {
   start_segment("uncompress_l0_0");
   f(gg({"fs"}), "or_rb_rb", g("accum", "lb"), g("accum", "lb"));
   bf("tmp", "base");
-  f(gg({"fs"}),"mov_rd_rd", g("tmp"), g("accum"));
+  f(gg({"fs"}), "mov_rd_rd", g("tmp"), g("accum"));
   f("branch", "nz", shd("uncompress_l2"), shd("uncompress_l0_1"));
   end();
 
@@ -1021,7 +1021,7 @@ void i686::init_uncompress() {
 
   start_segment("uncompress_l2");
   f("mov_rb_rb", g("accum", "lb"), g("tmp", "lb"));
-  f("shr_rd_vb", g("tmp"), std::uint64_t(2));  
+  f("shr_rd_vb", g("tmp"), std::uint64_t(2));
   f("jump", shd("uncompress_l2_test"));
   end();
 
@@ -1148,7 +1148,8 @@ void i686::init_uncompress() {
 
   start_segment("uncompress_lm5_btest");
   f("test_rd_rd", g("tmp"), g("tmp"));
-  f("branch", "nz", shd("uncompress_lm5_bloop"), shd("uncompress_lm5_bloop_end"));
+  f("branch", "nz", shd("uncompress_lm5_bloop"),
+    shd("uncompress_lm5_bloop_end"));
   end();
 
   start_segment("uncompress_lm5_bloop");
@@ -1206,7 +1207,7 @@ void i686::init_uncompress() {
   f("mov_rd_md", g("accum"), g("data"));
   f("mov_md_rd", g("out"), g("accum"));
   f("add_rd_vd", g("out"), std::uint64_t(3));
-  f("jump", shd("uncompress_ln1")); 
+  f("jump", shd("uncompress_ln1"));
   end();
 
   start_segment("uncompress_lm21_0");
@@ -1247,9 +1248,98 @@ void i686::init_uncompress() {
   end();
 }
 
-void i686::init_becb() {}
-void i686::init_decb() {}
-void i686::init_gambling() {}
+void i686::init_becb() {
+  start_segment("alter_b");
+  bf("target", "common");
+  f("load_rd", g("target"), vshd("target"));
+  bf("key", "base");
+  f("load_rb", g("key", "lb"), vshd("byte_key"));
+  bf("counter", "common");
+  f("load_rd", g("counter"), vshd("count"));
+  f("jump", shd("alter_b_test"));
+  end();
+
+  start_segment("alter_b_test");
+  f("test_rd_rd", g("counter"), g("counter"));
+  f("branch", "nz", shd("alter_b_loop"), shd("clear_end"));
+  end();
+
+  start_segment("alter_b_loop");
+  bf("accum", "base");
+  f("mov_rb_mb", g("accum", "lb"), g("target"));
+  f("xor_rb_rb", g("accum", "lb"), g("key", "lb"));
+  f("mov_mb_rb", g("target"), g("accum", "lb"));
+  fr("accum");
+  f("dec_rd", g("counter"));
+  f("inc_rd", g("target"));
+  f("jump", shd("alter_b_test"));
+  fr("target");
+  fr("key");
+  fr("counter");
+  end();
+}
+void i686::init_decb() {
+  start_segment("alter_d");
+  bf("target", "common");
+  f("load_rd", g("target"), vshd("target"));
+  bf("key", "common");
+  f("load_rd", g("key"), vshd("dword_key"));
+  bf("counter", "common");
+  f("load_rd", g("counter"), vshd("count"));
+  f("jump", shd("alter_d_test"));
+  end();
+
+  start_segment("alter_d_test");
+  f("test_rd_rd", g("counter"), g("counter"));
+  f("branch", "nz", shd("alter_d_loop"), shd("clear_end"));
+  end();
+
+  start_segment("alter_d_loop");
+  bf("accum", "common");
+  f("mov_rd_md", g("accum"), g("target"));
+  f("xor_rd_rd", g("accum"), g("key"));
+  f("mov_md_rd", g("target"), g("accum"));
+  fr("accum");
+  f("add_rd_vd", g("target"), std::uint64_t(4));
+  f("sub_rd_vd", g("counter"), std::uint64_t(4));
+  f("jump", shd("alter_d_test"));
+  fr("target");
+  fr("key");
+  fr("counter");
+  end();
+}
+void i686::init_gambling() {
+  start_segment("gambling");
+  bf("target", "common");
+  f("load_rd", g("target"), vshd("target"));
+  bf("key", "common");
+  f("load_rd", g("key"), vshd("key_addr"));
+  bf("counter", "common");
+  f("load_rd", g("counter"), vshd("count"));
+  f("jump", shd("gambling_test"));
+  end();
+
+  start_segment("gambling_test");
+  f("test_rd_rd", g("counter"), g("counter"));
+  f("branch", "nz", shd("gambling_loop"), shd("clear_end"));
+  end();
+
+  start_segment("gambling_loop");
+  bf("accum", "base");
+  f("mov_rb_mb", g("accum", "lb"), g("target"));
+  f("mov_rb_mb", g("accum", "hb"), g("key"));
+  f("xor_rb_rb", g("accum", "lb"), g("accum", "hb"));
+  f("mov_mb_rb", g("target"), g("accum", "lb"));
+  fr("accum");
+  f("dec_rd", g("counter"));
+  f("inc_rd", g("target"));
+  f("inc_rd", g("key"));
+  f("jump", shd("gambling_test"));
+  fr("target");
+  fr("key");
+  fr("counter");
+  end();
+}
 
 void i686::copy_fundamental() {
   copy_var("base", "fundamental");
@@ -1462,7 +1552,7 @@ void i686::init_invariants() {
 
   iv = make_invariant(cf);
   iv->add_register("r", "common");
-  iv->copy_flags(gg({"ss", "rc","fu"}));
+  iv->copy_flags(gg({"ss", "rc", "fu"}));
   iv->PROGRAMMER(EG->f(fl, "abs_r", VARS["r"], VARS["a"]);
                  EG->f(fl, "call_rd", VARS["r"]););
 
@@ -1472,8 +1562,7 @@ void i686::init_invariants() {
   iv->PROGRAMMER(auto ebp_ = global::cs.generate_unique_string("pr_regs");
                  EG->bss(ebp_, ebp); EG->f(fl, "abs_r", VARS["r"], VARS["a"]);
                  fl.set_flag(type_flags::fundomental_undepended);
-                 EG->f(fl, "mov_smd_rd", EG->g(ebp_), "-",
-                       EG->vshd("temporary"), VARS["r"]);
+                 EG->f(fl, "store_rd", EG->vshd("temporary"), VARS["r"]);
                  EG->f(fl, "call_smd", EG->g(ebp_), "-", EG->vshd("temporary"));
                  EG->fr(ebp_);
                  fl.unset_flag(type_flags::fundomental_undepended););
@@ -1485,8 +1574,7 @@ void i686::init_invariants() {
                  EG->bs(reg_, "common"); EG->f(fl, "push_rd", EG->g(reg_));
                  EG->bss(ebp_, ebp); EG->f(fl, "abs_r", EG->g(reg_), VARS["a"]);
                  fl.set_flag(type_flags::fundomental_undepended);
-                 EG->f(fl, "mov_smd_rd", EG->g(ebp_), "-",
-                       EG->vshd("temporary"), EG->g(reg_));
+                 EG->f(fl, "store_rd", EG->vshd("temporary"), EG->g(reg_));
                  EG->f(fl, "pop_rd", EG->g(reg_)); EG->fr(reg_);
                  EG->f(fl, "call_smd", EG->g(ebp_), "-", EG->vshd("temporary"));
                  fl.unset_flag(type_flags::fundomental_undepended);
@@ -1562,13 +1650,13 @@ void i686::init_invariants() {
   iv = make_invariant(cf);
   iv->add_register("r", "common");
   iv->copy_flags(gg({"ss", "rc"}));
-  iv->PROGRAMMER(
-      auto ebp_ = global::cs.generate_unique_string("pr_regs");
-      EG->bss(ebp_, ebp); EG->f(fl, "abs_r", VARS["r"], VARS["a"]);
-      fl.set_flag(type_flags::fundomental_undepended);
-      EG->f(fl, "mov_smd_rd", EG->g(ebp_), "-", EG->vshd("target"), VARS["r"]);
-      EG->f(fl, "jmp_smd", EG->g(ebp_), "-", EG->vshd("target")); EG->fr(ebp_);
-      fl.unset_flag(type_flags::fundomental_undepended););
+  iv->PROGRAMMER(auto ebp_ = global::cs.generate_unique_string("pr_regs");
+                 EG->bss(ebp_, ebp); EG->f(fl, "abs_r", VARS["r"], VARS["a"]);
+                 fl.set_flag(type_flags::fundomental_undepended);
+                 EG->f(fl, "store_rd", EG->vshd("temporary"), VARS["r"]);
+                 EG->f(fl, "jmp_smd", EG->g(ebp_), "-", EG->vshd("target"));
+                 EG->fr(ebp_);
+                 fl.unset_flag(type_flags::fundomental_undepended););
 
   iv = make_invariant(cf);
   iv->copy_flags(gg({"rc"}));
@@ -1577,8 +1665,7 @@ void i686::init_invariants() {
                  EG->bs(reg_, "common"); EG->f(fl, "push_rd", EG->g(reg_));
                  EG->bss(ebp_, ebp); EG->f(fl, "abs_r", EG->g(reg_), VARS["a"]);
                  fl.set_flag(type_flags::fundomental_undepended);
-                 EG->f(fl, "mov_smd_rd", EG->g(ebp_), "-", EG->vshd("target"),
-                       EG->g(reg_));
+                 EG->f(fl, "store_rd", EG->vshd("temporary"), EG->g(reg_));
                  EG->f(fl, "pop_rd", EG->g(reg_)); EG->fr(reg_);
                  EG->f(fl, "jmp_smd", EG->g(ebp_), "-", EG->vshd("target"));
                  fl.unset_flag(type_flags::fundomental_undepended);
@@ -1627,6 +1714,10 @@ void i686::init_invariants() {
   iv = make_invariant(cf);
   iv->copy_flags(gg({"st", "ss", "up", "fu"}));
   iv->PROGRAMMER(EG->f(fl, "xor_rd_rd", VARS["r"], VARS["r"]););
+
+  iv = make_invariant(cf);
+  iv->copy_flags(gg({"st", "fs", "ss", "up", "fu"}));
+  iv->PROGRAMMER(EG->f(fl, "mov_rd_vd", VARS["r"], std::uint64_t(0)););
   // clear_rd end
 
   // clear end
@@ -1725,8 +1816,7 @@ void i686::init_invariants() {
 
   iv = make_invariant(cf);
   iv->copy_flags(gg({"st", "ss", "fs", "up", "fu"}));
-  iv->PROGRAMMER(
-      EG->t(CAST, "mov ", VARS["r1"], ", WORD [", VARS["r2"], "]"););
+  iv->PROGRAMMER(EG->t(CAST, "mov ", VARS["r1"], ", WORD [", VARS["r2"], "]"););
   // mov_rw_mw end
 
   // mov_rd_smd begin
@@ -1925,6 +2015,17 @@ void i686::init_invariants() {
   iv->PROGRAMMER(EG->ta(CAST, "nasm", "movzx ", VARS["r1"], ",", VARS["r2"]););
   // movzx_rd_rb end
 
+  // movzx_rd_mw begin
+  cf = make_form("movzx_rd_mw");
+  cf->add_argument("r1");
+  cf->add_argument("r2");
+
+  iv = make_invariant(cf);
+  iv->copy_flags(gg({"st", "ss", "fs", "up", "fu"}));
+  iv->PROGRAMMER(
+      EG->t(CAST, "movzx ", VARS["r1"], ", WORD [", VARS["r2"], "]"););
+  // movzx_rd_mw end
+
   // movzx_rd_mb begin
   cf = make_form("movzx_rd_mb");
   cf->add_argument("r1");
@@ -2104,7 +2205,7 @@ void i686::init_invariants() {
   iv = make_invariant(cf);
   iv->copy_flags(gg({"st", "fs", "ss", "up", "fu"}));
   iv->PROGRAMMER(
-      EG->t(CAST, "add ", VARS["r1"], ", DWORD [", VARS["r2"], "]"););
+      EG->ta(CAST, "nasm", "add ", VARS["r1"], ", DWORD [", VARS["r2"], "]"););
   // add_rd_md end
 
   // add_rd_smd begin
@@ -3256,7 +3357,7 @@ void i686::init_invariants() {
 
   iv = make_invariant(cf);
   iv->copy_flags(gg({"ss", "fs", "up", "fu"}));
-  iv->PROGRAMMER(EG->t(CAST, "cmp ", VARS["r1"], ", DWORD [", VARS["r2"],
+  iv->PROGRAMMER(EG->ta(CAST, "nasm", "cmp ", VARS["r1"], ", DWORD [", VARS["r2"],
                        VARS["sign"], VARS["a"], "]"););
   // cmp_rd_smd end
 
