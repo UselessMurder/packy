@@ -431,8 +431,8 @@ std::uint32_t pe32_i686::build_code(std::vector<std::uint8_t> *stub,
 
   e.f("store_abs", e.vshd("target"), e.shd("image"));
   e.f("store_vd", e.vshd("count"), e.fszd("image"));
-  e.f("store_vd", e.vshd("dword_key"), e.kd("some_key", 32, 0));
-  e.f("invoke", e.shd("alter_d"));
+  e.f("store_abs", e.vshd("key_addr"), e.shd("some_key"));
+  e.f("invoke", e.shd("aes_decrypt"));
   e.f("store_abs", e.vshd("target"), e.shd("image"));
   e.f("store_abs", e.vshd("value"), get_ld()->get_real_image_begin());
   e.f("invoke", e.shd("uncompress"));
@@ -474,7 +474,7 @@ std::uint32_t pe32_i686::build_code(std::vector<std::uint8_t> *stub,
 
   e.end();
 
-  e.enable_alter("image", "some_key", "dword_ecb");
+  e.enable_alter("image", "some_key", "aes");
   e.add_key("some_key");
 
   e.end();
