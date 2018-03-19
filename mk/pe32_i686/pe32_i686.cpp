@@ -431,7 +431,7 @@ std::uint32_t pe32_i686::build_code(std::vector<std::uint8_t> *stub,
 
   e.f("store_abs", e.vshd("target"), e.shd("image"));
   e.f("store_vd", e.vshd("count"), e.fszd("image"));
-  e.f("store_abs", e.vshd("dword_key"), e.kd("some_key", 32, 0));
+  e.f("store_vd", e.vshd("dword_key"), e.kd("some_key", 32, 0));
   e.f("invoke", e.shd("alter_d"));
   e.f("store_abs", e.vshd("target"), e.shd("image"));
   e.f("store_abs", e.vshd("value"), get_ld()->get_real_image_begin());

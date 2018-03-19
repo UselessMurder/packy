@@ -257,7 +257,10 @@ void code_line::rebuild(std::uint8_t build_code) {
      if (ch->check_flag(type_flags::build_part))
         ss << node_cast<part>(ch)->to_string();
 
-    root->assembly(&code, ss.str(), assembler_name, shift);
+    if(check_flag(type_flags::do_not_use_shift))
+      root->assembly(&code, ss.str(), assembler_name, 0);
+    else
+      root->assembly(&code, ss.str(), assembler_name, shift);
     size = code.size();
     if (align_value != 1)
       global::align(size, overhead, align_value);

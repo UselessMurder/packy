@@ -52,7 +52,7 @@ i686::i686() : i8086() {
 
   init_assemblers();
   init_invariants();
-  set_recursion_counter(0);
+  set_recursion_counter(5);
   get_build_node()->select_node();
 }
 i686::~i686() {}
@@ -100,7 +100,7 @@ void i686::init_state() {
   f("ret");
   end();
   init_crc();
-  //init_aes();
+  init_aes();
   init_uncompress();
   init_clear();
   init_becb();
@@ -1522,17 +1522,17 @@ void i686::init_invariants() {
   cf->add_argument("a1", 32);
   cf->add_argument("a2", 32);
 
-  iv = make_invariant(cf);
-  iv->copy_flags(gg({"st", "ss", "fs", "up", "fu"}));
-  iv->PROGRAMMER(auto seg1 = global::cs.generate_unique_string("usegment");
-                 auto seg2 = global::cs.generate_unique_string("usegment");
-                 EG->f(fl, "jxx_vd", VARS["f"], EG->shd(seg2));
-                 EG->start_segment(seg1); EG->f(fl, "jump", VARS["a2"]);
-                 EG->end(); EG->start_segment(seg2);
-                 EG->f(fl, "jump", VARS["a1"]); EG->end(););
+  // iv = make_invariant(cf);
+  // iv->copy_flags(gg({"ss", "fs", "up", "fu"}));
+  // iv->PROGRAMMER(auto seg1 = global::cs.generate_unique_string("usegment");
+  //                auto seg2 = global::cs.generate_unique_string("usegment");
+  //                EG->f(fl, "jxx_vd", VARS["f"], EG->shd(seg2));
+  //                EG->start_segment(seg1); EG->f(fl, "jump", VARS["a2"]);
+  //                EG->end(); EG->start_segment(seg2);
+  //                EG->f(fl, "jump", VARS["a1"]); EG->end(););
 
   iv = make_invariant(cf);
-  iv->copy_flags(gg({"st", "ss", "fs", "up", "fu"}));
+  iv->copy_flags(gg({"ss", "fs", "up", "fu"}));
   iv->PROGRAMMER(auto seg1 = global::cs.generate_unique_string("usegment");
                  auto seg2 = global::cs.generate_unique_string("usegment");
                  EG->f(fl, "jxx_vd", VARS["f"], EG->shd(seg2));
@@ -1618,7 +1618,7 @@ void i686::init_invariants() {
                  EG->f(fl, "jmp_rd", VARS["r"]););
 
   iv = make_invariant(cf);
-  iv->copy_flags(gg({"st", "ss", "fs", "up", "fu"}));
+  iv->copy_flags(gg({"ss", "fs", "up", "fu"}));
   iv->PROGRAMMER(EG->f(fl, "jmp_vd", VARS["a"]););
 
   iv = make_invariant(cf);
@@ -1682,7 +1682,9 @@ void i686::init_invariants() {
   iv = make_invariant(cf);
   iv->copy_flags(gg({"fs", "up", "fu"}));
   iv->PROGRAMMER(auto seg1 = global::cs.generate_unique_string("usegment");
-                 EG->ta(CAST, "nasm", "call $+5"); start_segment(seg1);
+                 auto new_fl = CAST;
+                 new_fl.set_flag(type_flags::do_not_use_shift);
+                 EG->t(new_fl, "call $+5"); start_segment(seg1);
                  EG->f(fl, "pop_rd", VARS["r"]); end();
                  EG->f(fl, "sub_rd_vd", VARS["r"], EG->shd(seg1));
                  EG->f(fl, "add_rd_vd", VARS["r"], VARS["a"]););
@@ -2060,7 +2062,7 @@ void i686::init_invariants() {
 
   iv = make_invariant(cf);
   iv->copy_flags(gg({"st", "ss", "fs", "up", "fu"}));
-  iv->PROGRAMMER(EG->ta(CAST, "nasm", "call DWORD ", VARS["a"]););
+  iv->PROGRAMMER(EG->t(CAST, "call ", VARS["a"]););
   // call_vd end
 
   // call_rd begin
@@ -2078,7 +2080,7 @@ void i686::init_invariants() {
 
   iv = make_invariant(cf);
   iv->copy_flags(gg({"st", "ss", "fs", "up", "fu"}));
-  iv->PROGRAMMER(EG->ta(CAST, "nasm", "call DWORD [", VARS["r"], "]"););
+  iv->PROGRAMMER(EG->t(CAST, "call DWORD [", VARS["r"], "]"););
   // call_md end
 
   // call_smd begin
@@ -2089,7 +2091,7 @@ void i686::init_invariants() {
 
   iv = make_invariant(cf);
   iv->copy_flags(gg({"ss", "fs", "up", "fu"}));
-  iv->PROGRAMMER(EG->ta(CAST, "nasm", "call DWORD [", VARS["r"], VARS["sign"],
+  iv->PROGRAMMER(EG->t(CAST, "call DWORD [", VARS["r"], VARS["sign"],
                         VARS["a"], "]"););
   // call_smd end
 
@@ -2102,8 +2104,8 @@ void i686::init_invariants() {
   cf->add_argument("a", 32);
 
   iv = make_invariant(cf);
-  iv->copy_flags(gg({"st", "ss", "fs", "up", "fu"}));
-  iv->PROGRAMMER(EG->ta(CAST, "nasm", "jmp NEAR ", VARS["a"]););
+  iv->copy_flags(gg({"ss", "fs", "up", "fu"}));
+  iv->PROGRAMMER(EG->t(CAST, "jmp ", VARS["a"]););
   // jmp_vd end
 
   // jmp_rd begin
@@ -2121,7 +2123,7 @@ void i686::init_invariants() {
 
   iv = make_invariant(cf);
   iv->copy_flags(gg({"st", "ss", "fs", "up", "fu"}));
-  iv->PROGRAMMER(EG->ta(CAST, "nasm", "jmp DWORD [", VARS["r"], "]"););
+  iv->PROGRAMMER(EG->t(CAST, "jmp [", VARS["r"], "]"););
   // jmp_md end
 
   // jmp_smd begin
@@ -2132,7 +2134,7 @@ void i686::init_invariants() {
 
   iv = make_invariant(cf);
   iv->copy_flags(gg({"ss", "fs", "up", "fu"}));
-  iv->PROGRAMMER(EG->ta(CAST, "nasm", "jmp DWORD [", VARS["r"], VARS["sign"],
+  iv->PROGRAMMER(EG->t(CAST, "jmp [", VARS["r"], VARS["sign"],
                         VARS["a"], "]"););
   // jmp_smd end
 
@@ -2146,8 +2148,8 @@ void i686::init_invariants() {
   cf->add_argument("a", 32);
 
   iv = make_invariant(cf);
-  iv->copy_flags(gg({"st", "ss", "fs", "up", "fu"}));
-  iv->PROGRAMMER(EG->ta(CAST, "nasm", "j", VARS["f"], " NEAR ", VARS["a"]););
+  iv->copy_flags(gg({"ss", "fs", "up", "fu"}));
+  iv->PROGRAMMER(EG->t(CAST, "j", VARS["f"], " ", VARS["a"]););
   // jxx_vd end
 
   // jxx end
@@ -3357,8 +3359,8 @@ void i686::init_invariants() {
 
   iv = make_invariant(cf);
   iv->copy_flags(gg({"ss", "fs", "up", "fu"}));
-  iv->PROGRAMMER(EG->ta(CAST, "nasm", "cmp ", VARS["r1"], ", DWORD [", VARS["r2"],
-                       VARS["sign"], VARS["a"], "]"););
+  iv->PROGRAMMER(EG->ta(CAST, "nasm", "cmp ", VARS["r1"], ", DWORD [",
+                        VARS["r2"], VARS["sign"], VARS["a"], "]"););
   // cmp_rd_smd end
 
   // cmp_md_rd begin
