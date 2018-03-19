@@ -10,13 +10,11 @@ inline ld::pe::pe32 *pe32_i686::get_ld() {
   return dynamic_cast<ld::pe::pe32 *>(loader);
 }
 bool pe32_i686::ok_machine(ld::machine_types current_machine) {
-  if (ld::machine_types::i386 == current_machine)
-    return true;
+  if (ld::machine_types::i386 == current_machine) return true;
   return false;
 }
 bool pe32_i686::ok_loader(ld::loader_types current_loader) {
-  if (ld::loader_types::pe32 == current_loader)
-    return true;
+  if (ld::loader_types::pe32 == current_loader) return true;
   return false;
 }
 
@@ -72,37 +70,21 @@ std::uint32_t pe32_i686::get_ExitProcess_hash() {
   return result;
 }
 
-// void pe32_i686::end_init_code() {
-//   e.allocate_element("end", "general");
-//   auto entry_point = e.get_machine()->get_free("common");
-//   e.get_machine()->grab_register(entry_point);
-//   e.f("abs", entry_point,
-//       (*get_ld())->get_optional_header()->address_of_entry_point);
-//   e.f("mov_mdsh_rd", eg::i8086::ebp, "-", eg::base_eg::vshd("func_target"),
-//       entry_point);
-//   e.get_machine()->free_register(entry_point);
-//   e.get_machine()->grab_group("all");
-//   e.f("mov_rd_rd", eg::i8086::esp, eg::i8086::ebp);
-//   e.f("pop_rd", eg::i8086::ebp);
-//   auto r = e.get_machine()->get_rand("common");
-//   e.get_machine()->prepare(r);
-//   e.t("popad");
-//   e.f("push_rd", r);
-//   e.f("push_rd", r);
-//   e.f("add_rd_vd", eg::i8086::esp, std::uint64_t(4));
-//   e.f("mov_rd_mdsh", r, eg::i8086::esp, "-",
-//       eg::base_eg::wrapp(
-//           eg::base_eg::vshd("func_target"), {32},
-//           [](eg::part *p, std::vector<std::uint64_t> *v) -> std::uint64_t {
-//             return p->get_value() + (*v)[0];
-//           }));
-//   e.f("mov_md_rd", eg::i8086::esp, r);
-//   e.f("sub_rd_vd", eg::i8086::esp, std::uint64_t(4));
-//   e.f("pop_rd", r);
-//   e.f("ret");
-//   e.get_machine()->local_load(r);
-//   e.get_machine()->free_group("all");
-// }
+void pe32_i686::end_init_code() {
+  e.start_segment("end");
+  e.grab_group("common");
+  e.bss("ebp_", eg::i8086::ebp);
+  e.bss("esp_", eg::i8086::esp);
+  e.f("mov_rd_rd", e.g("esp_"), e.g("ebp_"));
+  e.f("pop_rd", e.g("ebp_"));
+  e.t("popad");
+  e.f(e.gg({"fu"}), "jump",
+      std::uint64_t(get_ld()->get_optional_header()->address_of_entry_point));
+  e.end();
+  e.free_group("common");
+  e.fr("ebp_");
+  e.fr("esp_");
+}
 
 void pe32_i686::error_exit_init_code() {
   e.start_segment("error_exit");
@@ -285,107 +267,117 @@ void pe32_i686::get_apix_init_code() {
   e.end();
 }
 
-// void pe32_i686::find_library_init_code() {
-//   e.allocate_element("find_library", "general");
-//   e.get_machine()->grab_register(eg::i8086::eax);
-//   auto lib_name = e.get_machine()->get_free("common");
-//   e.get_machine()->grab_register(lib_name);
-//   e.f("mov_rd_mdsh", lib_name, eg::i8086::ebp, "-",
-//       eg::base_eg::vshd("func_target"));
-//   e.f("push_rd", lib_name);
-//   e.f("call_mdsh", eg::i8086::ebp, "-",
-//   eg::base_eg::vshd("GetModuleHandle")); e.f("test_rd_rd", eg::i8086::eax,
-//   eg::i8086::eax); e.branch("jnz", "dll_found", "dll_not_found");
+void pe32_i686::find_library_init_code() {
+  e.start_segment("find_library");
+  e.bsp("eax_", eg::i8086::eax);
+  e.bf("lib_name", "common");
+  e.f("load_rd", e.g("lib_name"), e.vshd("target"));
+  e.f("push_rd", e.g("lib_name"));
+  e.bsp("ebp_", eg::i8086::ebp);
+  e.f("call_smd", e.g("ebp_"), "-", e.vshd("GetModuleHandle"));
+  e.f("test_rd_rd", e.g("eax_"), e.g("eax_"));
+  e.f("branch", "nz", e.shd("dll_found"), e.shd("dll_not_found"));
+  e.end();
 
-//   e.allocate_element("dll_not_found", "general");
-//   e.f("push_rd", lib_name);
-//   e.f("call_mdsh", eg::i8086::ebp, "-", eg::base_eg::vshd("LoadLibrary"));
-//   e.f("test_rd_rd", eg::i8086::eax, eg::i8086::eax);
-//   e.branch("jnz", "dll_found", "dll_not_load");
+  e.start_segment("dll_not_found");
+  e.f("push_rd", e.g("lib_name"));
+  e.fr("lib_name");
+  e.f("call_smd", e.g("ebp_"), "-", e.vshd("LoadLibrary"));
+  e.fr("ebp_");
+  e.f("test_rd_rd", e.g("eax_"), e.g("eax_"));
+  e.f("branch", "nz", e.shd("dll_found"), e.shd("dll_not_load"));
+  e.end();
 
-//   e.allocate_element("dll_not_load", "general");
-//   e.jump("error_exit");
+  e.start_segment("dll_not_load");
+  e.f("jump", e.shd("error_exit"));
+  e.end();
 
-//   e.allocate_element("dll_found", "general");
-//   e.f("mov_mdsh_rd", eg::i8086::ebp, "-", eg::base_eg::vshd("current_dll"),
-//       eg::i8086::eax);
-//   e.f("ret");
+  e.start_segment("dll_found");
+  e.f("store_rd", e.vshd("current_dll"), e.g("eax_"));
+  e.fr("eax_");
+  e.f("jump", e.shd("clear_end"));
+  e.end();
+}
 
-//   e.get_machine()->free_register(eg::i8086::eax);
-//   e.get_machine()->free_register(lib_name);
-// }
+void pe32_i686::load_function_init_code() {
+  e.start_segment("find_function");
+  e.bsp("eax_", eg::i8086::eax);
+  e.bf("lib_addr", "common");
+  e.f("load_rd", e.g("lib_addr"), e.vshd("current_dll"));
+  e.bf("func_name", "common");
+  e.f("load_rd", e.g("func_name"), e.vshd("target"));
+  e.f("push_rd", e.g("func_name"));
+  e.fr("func_name");
+  e.f("push_rd", e.g("lib_addr"));
+  e.fr("lib_addr");
+  e.bsp("ebp_", eg::i8086::ebp);
+  e.f("call_smd", e.g("ebp_"), "-", e.vshd("GetProcAddr"));
+  e.fr("ebp_");
+  e.f("test_rd_rd", e.g("eax_"), e.g("eax_"));
+  e.f("branch", "nz", e.shd("function_found"), e.shd("function_not_found"));
+  e.end();
 
-// void pe32_i686::load_function_init_code() {
-//   e.allocate_element("find_function", "general");
-//   e.get_machine()->grab_register(eg::i8086::eax);
-//   auto lib_addr = e.get_machine()->get_free("common");
-//   e.get_machine()->grab_register(lib_addr);
-//   auto func_name = e.get_machine()->get_free("common");
-//   e.get_machine()->grab_register(func_name);
-//   e.f("mov_rd_mdsh", func_name, eg::i8086::ebp, "-",
-//       eg::base_eg::vshd("func_target"));
-//   e.f("mov_rd_mdsh", lib_addr, eg::i8086::ebp, "-",
-//       eg::base_eg::vshd("current_dll"));
-//   e.f("push_rd", func_name);
-//   e.f("push_rd", lib_addr);
-//   e.f("call_mdsh", eg::i8086::ebp, "-", eg::base_eg::vshd("GetProcAddr"));
-//   e.f("test_rd_rd", eg::i8086::eax, eg::i8086::eax);
-//   e.branch("jnz", "function_found", "function_not_found");
+  e.start_segment("function_not_found");
+  e.f("jump", e.shd("error_exit"));
+  e.end();
 
-//   e.allocate_element("function_not_found", "general");
-//   e.jump("error_exit");
+  e.start_segment("function_found");
+  e.f("store_rd", e.vshd("func"), e.g("eax_"));
+  e.fr("eax_");
+  e.f("jump", e.shd("clear_end"));
+  e.end();
+}
 
-//   e.allocate_element("function_found", "general");
-//   e.f("mov_mdsh_rd", eg::i8086::ebp, "-", eg::base_eg::vshd("func"),
-//       eg::i8086::eax);
-//   e.f("ret");
+void pe32_i686::build_import_stub() {
+  std::vector<ld::pe::library> *import = get_ld()->get_import();
+  e.start_segment("import");
 
-//   e.get_machine()->free_register(eg::i8086::eax);
-//   e.get_machine()->free_register(lib_addr);
-//   e.get_machine()->free_register(func_name);
-// }
+  for (auto lib : *import) {
+    e.bf("iat_base", "common");
+    e.f("abs_r", e.g("iat_base"), std::uint64_t(lib.iat_begin));
+    auto dll_alias = global::cs.generate_unique_string("il");
+    e.add_top_data(dll_alias, &lib.name);
+    e.enable_alter(dll_alias, dll_alias + "key", "dword_ecb");
+    e.bf("tmp", "common");
+    e.f("abs_r", e.g("tmp"), e.shd(dll_alias));
+    e.f("store_rd", e.vshd("target"), e.g("tmp"));
+    e.f("store_vd", e.vshd("count"), e.fszd(dll_alias));
+    e.f("store_vd", e.vshd("dword_key"), e.kd(dll_alias + "key", 32, 0));
+    e.fr("tmp");
+    e.push_registers({e.g("iat_base")});
+    e.f("invoke", e.shd("alter_d"));
+    e.f("invoke", e.shd("find_library"));
+    e.f("invoke", e.shd("alter_d"));
+    e.pop_registers({e.g("iat_base")});
 
-// void pe32_i686::build_import_stub() {
-//   std::vector<ld::pe::library> *import = (*get_ld())->get_import();
-//   e.allocate_element("import", "general");
+    for (auto func : lib.functions) {
+      auto function_alias = global::cs.generate_unique_string("if");
+      e.add_top_data(function_alias, &func.first);
+      e.enable_alter(function_alias, function_alias + "key", "dword_ecb");
+      e.bf("tmp", "common");
+      e.f("abs_r", e.g("tmp"), e.shd(function_alias));
+      e.f("store_rd", e.vshd("target"), e.g("tmp"));
+      e.f("store_vd", e.vshd("count"), e.fszd(function_alias));
+      e.f("store_vd", e.vshd("dword_key"), e.kd(function_alias + "key", 32, 0));
+      e.fr("tmp");
+      e.push_registers({e.g("iat_base")});
+      e.f("invoke", e.shd("alter_d"));
+      e.f("invoke", e.shd("find_function"));
+      e.f("invoke", e.shd("alter_d"));
+      e.pop_registers({e.g("iat_base")});
+      e.bf("func_addr", "common");
+      e.f("load_rd", e.g("func_addr"), e.vshd("func"));
+      e.f("mov_md_rd", e.g("iat_base"), e.g("func_addr"));
+      e.fr("func_addr");
+      e.f("add_rd_vd", e.g("iat_base"), std::uint64_t(4));
+    }
 
-//   for (auto lib : *import) {
-//     auto iat_base = e.get_machine()->get_free("common");
-//     e.get_machine()->grab_register(iat_base);
-//     e.f("abs", iat_base, lib.iat_begin);
-//     auto dll_name_label = "il" + e.generate("il");
-//     auto dll_name_glob = e.allocate_global(dll_name_label);
-//     dll_name_glob->update_data(&lib.name);
-//     e.f("mov_mdsh_abs", eg::i8086::ebp, "-",
-//     eg::base_eg::vshd("func_target"),
-//         eg::base_eg::shd(dll_name_label));
-//     e.push_registers({iat_base});
-//     e.invoke("find_library");
-//     e.pop_registers({iat_base});
+    e.fr("iat_base");
+  }
 
-//     for (auto func : lib.functions) {
-//       auto function_name_label = "if" + e.generate("if");
-//       auto function_name_glob = e.allocate_global(function_name_label);
-//       function_name_glob->update_data(&func.first);
-//       e.f("mov_mdsh_abs", eg::i8086::ebp, "-",
-//       eg::base_eg::vshd("func_target"),
-//           eg::base_eg::shd(function_name_label));
-//       e.push_registers({iat_base});
-//       e.invoke("find_function");
-//       e.pop_registers({iat_base});
-//       auto func_addr = e.get_machine()->get_free("common");
-//       e.get_machine()->grab_register(func_addr);
-//       e.f("mov_rd_mdsh", func_addr, eg::i8086::ebp, "-",
-//           eg::base_eg::vshd("func"));
-//       e.f("mov_md_rd", iat_base, func_addr);
-//       e.f("add_rd_vd", iat_base, std::uint64_t(4));
-//       e.get_machine()->free_register(func_addr);
-//     }
-//     e.get_machine()->free_register(iat_base);
-//   }
-
-//   e.jump("end");
-// }
+  e.f("jump", e.shd("end"));
+  e.end();
+}
 
 std::uint32_t pe32_i686::build_code(std::vector<std::uint8_t> *stub,
                                     std::vector<std::uint8_t> *data) {
@@ -410,8 +402,14 @@ std::uint32_t pe32_i686::build_code(std::vector<std::uint8_t> *stub,
 
   search_expx_init_code();
   get_apix_init_code();
+  error_exit_init_code();
+  end_init_code();
+  find_library_init_code();
+  load_function_init_code();
+  build_import_stub();
 
   e.start_segment("begin");
+  e.t("pushad");
   e.bsp("ebp_", eg::i8086::ebp);
   e.f(e.gg({"fu"}), "push_rd", e.g("ebp_"));
   e.bsp("esp_", eg::i8086::esp);
@@ -465,6 +463,8 @@ std::uint32_t pe32_i686::build_code(std::vector<std::uint8_t> *stub,
   e.f("store_rd", e.vshd("ExitProcess"), e.g("tmp"));
   e.fr("tmp");
 
+  e.f("jump", e.shd("import"));
+
   e.bsp("esp_", eg::i8086::esp);
   e.f(e.gg({"fu"}), "mov_rd_rd", e.g("esp_"), e.g("ebp_"));
   e.f(e.gg({"fu"}), "pop_rd", e.g("ebp_"));
@@ -479,11 +479,7 @@ std::uint32_t pe32_i686::build_code(std::vector<std::uint8_t> *stub,
 
   e.end();
 
-  // printf("%s\n", e.to_string().c_str());
-
   e.build(stub);
-
-  // printf("%s\n", e.to_string().c_str());
 
   return static_cast<std::uint32_t>(e.get_entry_point());
 }
@@ -507,4 +503,4 @@ void pe32_i686::write_header(std::vector<std::uint8_t> header) {
 void pe32_i686::write_data(std::vector<std::uint8_t> *data) {
   file->write_bytes(*data);
 }
-} // namespace mk
+}  // namespace mk

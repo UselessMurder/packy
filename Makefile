@@ -20,11 +20,14 @@ endif
 
 INC_DIR += -I$(MKFILE_PATH)
 INC_DIR += -I$(MKFILE_PATH)include
-LIBS += -llibr_asm
-LIBS += -llibboost_filesystem-mt
-LIBS += -llibboost_system-mt
-LIBS += -llibcryptopp
-LIBS += -lliblzo2
+LIBS += -L/usr/lib
+LIBS += -lr_asm
+#LIBS += -llibboost_filesystem-mt
+LIBS += -lboost_filesystem
+#LIBS += -llibboost_system-mt
+LIBS += -lboost_system
+LIBS += -lcryptopp
+LIBS += -llzo2
 
 CPPFLAGS += -std=c++17 -Wc++17-extensions $(INC_DIR)  
 #CPPFLAGS += -std=c++17 -static-libstdc++ $(INC_DIR) 

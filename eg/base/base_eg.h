@@ -219,6 +219,7 @@ public:
   void add_var(std::string var_name, std::uint64_t var_size);
   void copy_var(std::string var_name, std::string frame_name);
 
+  void add_top_data(std::string data_name, std::vector<uint8_t> *data_content);
   void add_data(std::string data_name, std::vector<uint8_t> *data_content);
   void add_data(std::string data_name, std::uint64_t data_size);
   void add_key(std::string key_name);

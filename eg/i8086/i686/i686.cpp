@@ -1654,7 +1654,7 @@ void i686::init_invariants() {
                  EG->bss(ebp_, ebp); EG->f(fl, "abs_r", VARS["r"], VARS["a"]);
                  fl.set_flag(type_flags::fundomental_undepended);
                  EG->f(fl, "store_rd", EG->vshd("temporary"), VARS["r"]);
-                 EG->f(fl, "jmp_smd", EG->g(ebp_), "-", EG->vshd("target"));
+                 EG->f(fl, "jmp_smd", EG->g(ebp_), "-", EG->vshd("temporary"));
                  EG->fr(ebp_);
                  fl.unset_flag(type_flags::fundomental_undepended););
 
@@ -1667,7 +1667,7 @@ void i686::init_invariants() {
                  fl.set_flag(type_flags::fundomental_undepended);
                  EG->f(fl, "store_rd", EG->vshd("temporary"), EG->g(reg_));
                  EG->f(fl, "pop_rd", EG->g(reg_)); EG->fr(reg_);
-                 EG->f(fl, "jmp_smd", EG->g(ebp_), "-", EG->vshd("target"));
+                 EG->f(fl, "jmp_smd", EG->g(ebp_), "-", EG->vshd("temporary"));
                  fl.unset_flag(type_flags::fundomental_undepended);
                  EG->fr(ebp_););
   // jump end

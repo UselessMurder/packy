@@ -132,6 +132,8 @@ std::vector<uint8_t> pe32::get_rebuilded_header(std::uint32_t stub_size,
       image.size() - get_section_header(0)->virtual_address;
   header->address_of_entry_point = code_begin;
 
+  header->dll_characteristics = header->dll_characteristics & ~0x0040;
+
   std::uint64_t size = image.size();
   std::uint64_t overhead = 0;
   global::align(size, overhead, get_optional_header()->section_alignment);

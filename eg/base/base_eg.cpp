@@ -636,6 +636,22 @@ void build_root::fix_segment(std::string segment_name) {
   mp->set_flag(type_flags::fixed);
 }
 
+void build_root::add_top_data(std::string data_name, std::vector<uint8_t> *data_content) {
+  duplicate_guard(data_name);
+  node *current_node =
+      find_node_by_flag<node>(get_build_node(), type_flags::node_current,
+                              {bypass_flags::self, bypass_flags::childs});
+  data_line *current_data = reinterpret_cast<data_line *>(0);
+  if (!current_node->check_flag(type_flags::build_frame)) {
+    current_node = find_node_by_flag<node>(
+        current_node, type_flags::build_frame, {bypass_flags::parents});
+  }
+  current_data = new data_line(current_node);
+  current_data->set_flag(type_flags::memory_top);
+  current_data->set_name(data_name);
+  current_data->set_content(data_content);
+}
+
 void build_root::add_data(std::string data_name,
                           std::vector<uint8_t> *data_content) {
   duplicate_guard(data_name);
