@@ -8,7 +8,7 @@ pe32::pe32(fs::in_file *in_file) : base_pe(in_file) { optional_header = 0; }
 
 pe32::~pe32() {}
 
-inline image_optional_header32 *pe32::get_optional_header() {
+image_optional_header32 *pe32::get_optional_header() {
   return reinterpret_cast<image_optional_header32 *>(&image[optional_header]);
 }
 
@@ -29,18 +29,18 @@ void pe32::continue_parsing() {
 machine_types pe32::get_machine_type() {
   machine_types type;
   switch (get_file_header()->machine) {
-  case 0x014C: {
-    type = machine_types::i386;
-    break;
-  }
-  case 0x8664: {
-    type = machine_types::amd64;
-    break;
-  }
-  default: {
-    type = machine_types::none;
-    break;
-  }
+    case 0x014C: {
+      type = machine_types::i386;
+      break;
+    }
+    case 0x8664: {
+      type = machine_types::amd64;
+      break;
+    }
+    default: {
+      type = machine_types::none;
+      break;
+    }
   }
   return type;
 }
@@ -70,8 +70,7 @@ void pe32::read_thuncks(
   for (std::uint32_t i = begin; true; i += 4) {
     if (i + 4 >= image.size())
       throw std::domain_error("thuncks size is more than file size");
-    if (*((std::uint32_t *)&image[i]) == 0)
-      break;
+    if (*((std::uint32_t *)&image[i]) == 0) break;
     thuncks.push_back(*((std::uint32_t *)&image[i]));
   }
   for (std::uint32_t i = 0; i < thuncks.size(); i++) {
@@ -93,8 +92,7 @@ void pe32::read_thuncks(
 bool pe32::is_valid_nt_magic() {
   std::uint8_t nt_magic[2] = {0x0B, 0x01};
   for (std::uint8_t i = 0; i < 2; i++) {
-    if (image[optional_header + i] != nt_magic[i])
-      return false;
+    if (image[optional_header + i] != nt_magic[i]) return false;
   }
   return true;
 }
@@ -213,10 +211,10 @@ std::uint64_t pe32::get_real_image_begin() {
 }
 
 std::uint64_t pe32::get_real_image_size() {
-  return image.size() - static_cast<std::uint64_t>(get_section_header(0)->virtual_address);
+  return image.size() -
+         static_cast<std::uint64_t>(get_section_header(0)->virtual_address);
 }
 std::uint64_t pe32::get_begin_of_stub() {
-
   std::uint64_t size = image.size();
   std::uint64_t overhead = 0;
   global::align(size, overhead, get_optional_header()->section_alignment);
@@ -233,16 +231,14 @@ void pe32::resize_with_file_align(std::vector<uint8_t> *data) {
   std::uint64_t size = data->size();
   std::uint64_t overhead = 0;
   global::align(size, overhead, get_optional_header()->file_alignment);
-  if ((size + overhead) != data->size())
-    data->resize(size + overhead);
+  if ((size + overhead) != data->size()) data->resize(size + overhead);
 }
 
 void pe32::resize_with_section_align(std::vector<uint8_t> *data) {
   std::uint64_t size = data->size();
   std::uint64_t overhead = 0;
   global::align(size, overhead, get_optional_header()->section_alignment);
-  if ((size + overhead) != data->size())
-    data->resize(size + overhead);
+  if ((size + overhead) != data->size()) data->resize(size + overhead);
 }
 
-} // namespace ld::pe
+}  // namespace ld::pe

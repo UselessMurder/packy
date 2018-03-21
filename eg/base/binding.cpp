@@ -1,8 +1,8 @@
-#include <algorithm>
 #include <eg/base/base_eg.h>
+#include <global/global_entities.h>
+#include <algorithm>
 #include <chrono>
 #include <cstdlib>
-#include <global/global_entities.h>
 #include <stdexcept>
 
 namespace eg {
@@ -21,14 +21,12 @@ std::uint64_t global_object::get_object_id() { return global_object_id; }
 
 node::node(node *parent) : global_object(), global::flag_container() {
   parent_node = parent;
-  if (parent != reinterpret_cast<node *>(0))
-    parent_node->grab_node(this);
+  if (parent != reinterpret_cast<node *>(0)) parent_node->grab_node(this);
   last_current = reinterpret_cast<node *>(0);
 }
 
 node::~node() {
-  for (auto ch : childs)
-    delete ch;
+  for (auto ch : childs) delete ch;
 }
 
 node::node(const node &n) : global_object(n), global::flag_container(n) {
@@ -46,8 +44,7 @@ void node::leave_context(std::uint64_t ctx) {
 }
 
 bool node::in_context(std::uint64_t ctx) {
-  if (contexts.find(ctx) != contexts.end())
-    return true;
+  if (contexts.find(ctx) != contexts.end()) return true;
   return false;
 }
 
@@ -59,8 +56,7 @@ void node::untie_recall(std::uint64_t ctx) {
   recall.erase(ctx);
 }
 bool node::is_recall(std::uint64_t ctx) {
-  if (recall.find(ctx) != recall.end())
-    return true;
+  if (recall.find(ctx) != recall.end()) return true;
   return false;
 }
 
@@ -89,11 +85,14 @@ void node::free_node(node *child_node) {
                               std::to_string(child_node->get_object_id()));
 }
 
+std::vector<node *> *node::get_childs() {
+  return &childs;
+}
+
 bool node::run_functor(std::function<bool(node *, std::uint64_t)> functor,
                        global::flag_container flags, std::uint64_t ctx) {
   if (flags.check_flag(bypass_flags::self)) {
-    if (functor(this, ctx))
-      return true;
+    if (functor(this, ctx)) return true;
   }
 
   global::named_defer recall_defer;
@@ -106,18 +105,15 @@ bool node::run_functor(std::function<bool(node *, std::uint64_t)> functor,
   if (flags.check_flag(bypass_flags::childs)) {
     for (auto ch : childs) {
       if (!ch->in_context(ctx)) {
-        p = ch->run_functor(functor, {bypass_flags::self, bypass_flags::childs},
-                            ctx);
-        if (p)
-          return p;
+        p = ch->run_functor(functor, std::uint64_t(0x3), ctx);
+        if (p) return p;
       }
     }
   }
 
   if (is_recall(ctx)) {
     DEFER(this->untie_recall(ctx););
-    if (functor(this, ctx))
-      return true;
+    if (functor(this, ctx)) return true;
   }
 
   if (flags.check_flag(bypass_flags::parents)) {
@@ -125,14 +121,9 @@ bool node::run_functor(std::function<bool(node *, std::uint64_t)> functor,
         parent_node->in_context(ctx))
       return p;
     if (flags.check_flag(bypass_flags::broadcast)) {
-      p = parent_node->run_functor(functor,
-                                   {bypass_flags::self, bypass_flags::childs,
-                                    bypass_flags::parents,
-                                    bypass_flags::broadcast},
-                                   ctx);
+      p = parent_node->run_functor(functor, std::uint64_t(0xF), ctx);
     } else
-      p = parent_node->run_functor(
-          functor, {bypass_flags::self, bypass_flags::parents}, ctx);
+      p = parent_node->run_functor(functor, std::uint64_t(0x5), ctx);
   }
   return p;
 }
@@ -152,9 +143,7 @@ void node::select_node() {
         }
         return false;
       },
-      {bypass_flags::self, bypass_flags::childs, bypass_flags::parents,
-       bypass_flags::broadcast},
-      global::cs.generate_unique_number("ctx"));
+      std::uint64_t(0xF), global::cs.generate_unique_number("ctx"));
 
   if (p) {
     target->unset_flag(type_flags::node_current);
@@ -174,9 +163,7 @@ void node::unselect_node() {
         }
         return false;
       },
-      {bypass_flags::self, bypass_flags::childs, bypass_flags::parents,
-       bypass_flags::broadcast},
-      global::cs.generate_unique_number("ctx"));
+      std::uint64_t(0xF), global::cs.generate_unique_number("ctx"));
 
   if (!p)
     throw std::domain_error(
@@ -193,7 +180,7 @@ loop_guard::~loop_guard() {}
 
 void loop_guard::join(std::string storage_name, std::uint64_t id) {
   if (loop_storages.count(storage_name) < 1)
-    loop_storages[storage_name] = std::set<std::uint64_t>();
+    loop_storages[storage_name] = std::unordered_set<std::uint64_t>();
 
   auto &current_storage = loop_storages[storage_name];
 
@@ -205,7 +192,7 @@ void loop_guard::join(std::string storage_name, std::uint64_t id) {
 
 void loop_guard::leave(std::string storage_name, std::uint64_t id) {
   if (loop_storages.count(storage_name) < 1)
-    loop_storages[storage_name] = std::set<std::uint64_t>();
+    loop_storages[storage_name] = std::unordered_set<std::uint64_t>();
 
   auto &current_storage = loop_storages[storage_name];
 
@@ -243,8 +230,7 @@ void crypto_alghorithm::set_generator(
 
 void crypto_alghorithm::alter(std::vector<std::uint8_t> *data,
                               std::vector<std::uint8_t> *key) {
-  if (!alg)
-    throw std::domain_error("Currupted algorithm function!");
+  if (!alg) throw std::domain_error("Currupted algorithm function!");
   alg(data, key);
 }
 
@@ -283,8 +269,7 @@ void recursion_counter::set_recursion_counter(std::uint64_t counter) {
 }
 std::uint64_t recursion_counter::get_recursion_counter() { return r_counter; }
 bool recursion_counter::is_recursion_counter() {
-  if (r_counter != 0)
-    return true;
+  if (r_counter != 0) return true;
   return false;
 }
 void recursion_counter::up_recursion_counter() {
@@ -299,8 +284,7 @@ void recursion_counter::store_recursion_counter() {
   r_stack_size++;
 }
 void recursion_counter::load_recursion_counter() {
-  if (r_stack_size == 0)
-    throw std::domain_error("Recursion stack is empty");
+  if (r_stack_size == 0) throw std::domain_error("Recursion stack is empty");
   r_stack_size--;
   r_counter = r_stack.back();
   r_stack.pop_back();
@@ -309,4 +293,4 @@ void recursion_counter::load_recursion_counter() {
 printable_object::printable_object() {}
 printable_object::~printable_object() {}
 
-} // namespace eg
+}  // namespace eg

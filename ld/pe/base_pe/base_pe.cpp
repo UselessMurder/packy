@@ -19,20 +19,20 @@ base_pe::base_pe(fs::in_file *in_file) : base_ld(in_file) {
 
 base_pe::~base_pe() {}
 
-inline image_dos_header *base_pe::get_dos_header() {
+image_dos_header *base_pe::get_dos_header() {
   return reinterpret_cast<image_dos_header *>(&image[dos_header]);
 }
 
-inline image_file_header *base_pe::get_file_header() {
+image_file_header *base_pe::get_file_header() {
   return reinterpret_cast<image_file_header *>(&image[file_header]);
 }
 
-inline image_section_header *base_pe::get_section_header(std::uint64_t index) {
+image_section_header *base_pe::get_section_header(std::uint64_t index) {
   return reinterpret_cast<image_section_header *>(
       &image[section_headers[index]]);
 }
 
-inline image_import_descriptor *
+image_import_descriptor *
 base_pe::get_import_descriptor(std::uint32_t rva) {
   return reinterpret_cast<image_import_descriptor *>(&image[rva]);
 }

@@ -22,6 +22,7 @@ INC_DIR += -I$(MKFILE_PATH)
 INC_DIR += -I$(MKFILE_PATH)include
 LIBS += -L/usr/lib
 LIBS += -lr_asm
+LIBS += -lpthread
 #LIBS += -llibboost_filesystem-mt
 LIBS += -lboost_filesystem
 #LIBS += -llibboost_system-mt
@@ -29,8 +30,8 @@ LIBS += -lboost_system
 LIBS += -lcryptopp
 LIBS += -llzo2
 
-CPPFLAGS += -std=c++17 -Wc++17-extensions $(INC_DIR)  
-#CPPFLAGS += -std=c++17 -static-libstdc++ $(INC_DIR) 
+CPPFLAGS += -std=c++17 -Wc++17-extensions -Ofast -fopenmp -D_GLIBCXX_PARALLEL -march=native $(INC_DIR)  
+#CPPFLAGS += -std=c++17 -static-libstdc++ -O3 $(INC_DIR) 
 
 OBJECTS = objfiles/main.o
 OBJECTS += objfiles/packy.o

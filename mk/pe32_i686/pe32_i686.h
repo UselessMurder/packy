@@ -8,13 +8,13 @@
 
 namespace mk {
 class pe32_i686 : public base_mk {
-protected:
+ protected:
   eg::i8086::i686 e;
   lzo_compress cmpr;
   ld::pe::pe32 *get_ld();
   void write_header(std::vector<std::uint8_t> header);
   void write_data(std::vector<std::uint8_t> *data);
-  
+
   std::uint32_t build_code(std::vector<std::uint8_t> *stub,
                            std::vector<std::uint8_t> *data);
 
@@ -32,7 +32,7 @@ protected:
   std::uint32_t get_GetProcAddress_hash();
   std::uint32_t get_ExitProcess_hash();
 
-public:
+ public:
   pe32_i686();
   pe32_i686(fs::out_file *out_file);
   ~pe32_i686();
@@ -40,6 +40,6 @@ public:
   bool ok_loader(ld::loader_types current_loader);
   void make();
 };
-} // namespace mk
+}  // namespace mk
 
 #endif

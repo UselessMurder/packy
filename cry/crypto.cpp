@@ -1,8 +1,8 @@
 #include <cry/crypto.h>
-#include <global/global_entities.h>
 #include <cryptopp/aes.h>
 #include <cryptopp/filters.h>
 #include <cryptopp/modes.h>
+#include <global/global_entities.h>
 
 namespace cry {
 
@@ -64,13 +64,11 @@ void ecb::generate_key(std::vector<uint8_t> *key) {
         static_cast<std::uint8_t>(global::rc.generate_random_number()));
 }
 void ecb::encrypt(std::vector<uint8_t> *data, std::vector<uint8_t> *key) {
-
   if (data->size() % key->size() != 0)
     throw std::domain_error("Invalid data align for ecb");
 
   for (std::uint64_t i = 0, j = 0; i < data->size(); i++, j++) {
-    if (j >= key->size())
-      j = 0;
+    if (j >= key->size()) j = 0;
     (*data)[i] = (*data)[i] ^ (*key)[j];
   }
 }
@@ -84,7 +82,6 @@ void gambling::generate_key(std::vector<uint8_t> *key,
         static_cast<std::uint8_t>(global::rc.generate_random_number()));
 }
 void gambling::encrypt(std::vector<uint8_t> *data, std::vector<uint8_t> *key) {
-
   if (data->size() != key->size())
     throw std::domain_error("Invalid gambling key");
 
@@ -101,14 +98,11 @@ void aes::generate_key(std::vector<uint8_t> *key) {
         static_cast<std::uint8_t>(global::rc.generate_random_number()));
 }
 void aes::encrypt(std::vector<uint8_t> *data, std::vector<uint8_t> *key) {
-  if(key->size() != 32)
-    throw std::domain_error("Invalid aes key");
+  if (key->size() != 32) throw std::domain_error("Invalid aes key");
 
-  if(data->size() % 16 != 0)
-    throw std::domain_error("Invalid aes padding");
-  
+  if (data->size() % 16 != 0) throw std::domain_error("Invalid aes padding");
+
   CryptoPP::ECB_Mode<CryptoPP::AES>::Encryption e(&((*key)[0]), key->size());
   e.ProcessData(&((*data)[0]), &((*data)[0]), data->size());
 }
-
-} // namespace cry
+}  // namespace cry

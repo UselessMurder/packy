@@ -8,8 +8,8 @@
 #include <cstdint>
 #include <functional>
 #include <list>
-#include <map>
-#include <set>
+#include <unordered_map>
+#include <unordered_set>
 #include <stdexcept>
 #include <string>
 #include <typeinfo>
@@ -108,8 +108,8 @@ protected:
   std::string name;
   node *last_current;
 
-  std::set<std::uint64_t> contexts;
-  std::set<std::uint64_t> recall;
+  std::unordered_set<std::uint64_t> contexts;
+  std::unordered_set<std::uint64_t> recall;
 
   void join_context(std::uint64_t ctx);
   void leave_context(std::uint64_t ctx);
@@ -119,6 +119,8 @@ public:
   node(node *parent);
   node(const node &n);
   virtual ~node();
+
+  std::vector<node *> *get_childs();
 
   virtual void set_name(std::string current_name);
   virtual std::string get_name();
@@ -141,7 +143,7 @@ public:
 
 class loop_guard {
 private:
-  std::map<std::string, std::set<std::uint64_t>> loop_storages;
+  std::unordered_map<std::string, std::unordered_set<std::uint64_t>> loop_storages;
 
 public:
   loop_guard();
@@ -152,7 +154,7 @@ public:
 
 class key_value_storage {
 private:
-  std::map<std::string, std::any> values_storage;
+  std::unordered_map<std::string, std::any> values_storage;
 
 public:
   key_value_storage() {}
@@ -250,7 +252,7 @@ T *find_node_by_name(node *current_node, std::string name,
   node *n;
   bool ok = current_node->run_functor(
       [&n, &name](node *current_node, std::uint64_t ctx) -> bool {
-        if (current_node->get_name() == name) {
+        if (std::strcmp(name.data(), current_node->get_name().data()) == 0) {
           n = current_node;
           return true;
         }

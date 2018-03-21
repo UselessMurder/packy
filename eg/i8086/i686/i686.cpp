@@ -1,21 +1,21 @@
 #include <cry/crypto.h>
 #include <eg/i8086/i686/i686.h>
 
-#define PROGRAMMER(code)                                                       \
-  register_programmer(                                                         \
-      [this, iv](global::flag_container fl,                                    \
+#define PROGRAMMER(code)                    \
+  register_programmer(                      \
+      [this, iv](global::flag_container fl, \
                  std::map<std::string, part *> *vars) { code })
-#define VALIDATOR(code)                                                        \
+#define VALIDATOR(code) \
   register_validator([this](std::vector<part *> *vars) -> bool { code })
-#define BALANCER(code)                                                         \
+#define BALANCER(code) \
   register_balancer([this](std::map<std::string, part *> *vars) { code })
 #define EG this
 #define VARS (*vars)
 
 #define CAST static_cast<global::flag_container>(*iv)
 
-#define GROUP_ALL                                                              \
-  type_flags::stack_safe type_flags::flag_safe                                 \
+#define GROUP_ALL                              \
+  type_flags::stack_safe type_flags::flag_safe \
       type_flags::fundomental_undepended type_flags::debug_unprotected
 
 namespace eg::i8086 {
@@ -60,15 +60,13 @@ i686::~i686() {}
 void i686::init_assemblers() {
   RAsm *a = 0;
   a = r_asm_new();
-  if (!r_asm_use(a, "x86"))
-    throw std::domain_error("Invalid assemler name");
+  if (!r_asm_use(a, "x86")) throw std::domain_error("Invalid assemler name");
   if (!r_asm_set_bits(a, get_value<std::uint32_t>("bitness")))
     throw std::domain_error("Invalid bintess");
   assemblers["default"] = a;
 
   a = r_asm_new();
-  if (!r_asm_use(a, "x86.as"))
-    throw std::domain_error("Invalid assemler name");
+  if (!r_asm_use(a, "x86.as")) throw std::domain_error("Invalid assemler name");
   if (!r_asm_set_bits(a, get_value<std::uint32_t>("bitness")))
     throw std::domain_error("Invalid bintess");
   assemblers["gas"] = a;
@@ -96,6 +94,7 @@ void i686::init_state() {
   add_var("round_number", 1);
   add_var("sub_byte", 1);
   add_var("bus_byte", 1);
+
   start_segment("clear_end");
   f("ret");
   end();
@@ -209,7 +208,6 @@ void i686::init_clear() {
 }
 
 void i686::init_aes() {
-
   std::vector<uint8_t> bytes_inv_s_box = {
       const_inv_s_box, const_inv_s_box + sizeof(const_inv_s_box)};
   std::vector<uint8_t> bytes_s_box = {const_sbox,
@@ -1358,24 +1356,20 @@ void i686::copy_fundamental() {
 }
 
 void i686::push_registers(std::initializer_list<std::string> registers) {
-  for (auto r : registers)
-    f("push_rd", r);
+  for (auto r : registers) f("push_rd", r);
 }
 
 void i686::pop_registers(std::initializer_list<std::string> registers) {
   std::vector<std::string> reflection;
-  for (auto r : registers)
-    reflection.push_back(r);
+  for (auto r : registers) reflection.push_back(r);
   std::reverse(reflection.begin(), reflection.end());
-  for (auto r : reflection)
-    f("pop_rd", r);
+  for (auto r : reflection) f("pop_rd", r);
 }
 
-global::flag_container
-i686::gg(std::initializer_list<std::string> current_flags) {
+global::flag_container i686::gg(
+    std::initializer_list<std::string> current_flags) {
   global::flag_container current;
-  for (auto cf : current_flags)
-    current.set_flag(ivg[cf]);
+  for (auto cf : current_flags) current.set_flag(ivg[cf]);
   return current;
 }
 
@@ -1586,7 +1580,7 @@ void i686::init_invariants() {
   cf->add_argument("a", 32);
 
   iv = make_invariant(cf);
-  iv->copy_flags(gg({"rc", "fu"}));
+  iv->copy_flags(gg({"rc"}));
   iv->PROGRAMMER(
       auto seg1 = global::cs.generate_unique_string("usegment");
       auto reg_ = global::cs.generate_unique_string("pr_regs");
@@ -1634,7 +1628,7 @@ void i686::init_invariants() {
                  EG->f(fl, "push_rd", VARS["r"]); EG->f(fl, "ret"););
 
   iv = make_invariant(cf);
-  iv->copy_flags(gg({"rc", "fu"}));
+  iv->copy_flags(gg({"rc"}));
   iv->PROGRAMMER(auto reg_ = global::cs.generate_unique_string("pr_regs");
                  auto esp_ = global::cs.generate_unique_string("pr_regs");
                  EG->bs(reg_, "common"); EG->f(fl, "push_rd", EG->g(reg_));
@@ -2091,8 +2085,8 @@ void i686::init_invariants() {
 
   iv = make_invariant(cf);
   iv->copy_flags(gg({"ss", "fs", "up", "fu"}));
-  iv->PROGRAMMER(EG->t(CAST, "call DWORD [", VARS["r"], VARS["sign"],
-                        VARS["a"], "]"););
+  iv->PROGRAMMER(
+      EG->t(CAST, "call DWORD [", VARS["r"], VARS["sign"], VARS["a"], "]"););
   // call_smd end
 
   // call end
@@ -2134,8 +2128,8 @@ void i686::init_invariants() {
 
   iv = make_invariant(cf);
   iv->copy_flags(gg({"ss", "fs", "up", "fu"}));
-  iv->PROGRAMMER(EG->t(CAST, "jmp [", VARS["r"], VARS["sign"],
-                        VARS["a"], "]"););
+  iv->PROGRAMMER(
+      EG->t(CAST, "jmp [", VARS["r"], VARS["sign"], VARS["a"], "]"););
   // jmp_smd end
 
   // jmp end
@@ -4243,4 +4237,4 @@ void i686::init_invariants() {
   // ror end
 }
 
-} // namespace eg::i8086
+}  // namespace eg::i8086

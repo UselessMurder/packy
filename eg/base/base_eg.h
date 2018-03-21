@@ -10,7 +10,7 @@
 namespace eg {
 
 class crypto_storage {
-protected:
+ protected:
   std::map<std::string, crypto_alghorithm *> algs;
   std::map<std::string, std::pair<std::string, std::vector<std::uint8_t>>> keys;
   std::map<std::string, std::string> enabled_pieces;
@@ -21,7 +21,7 @@ protected:
 
   std::pair<bool, std::uint64_t> has_crypto_align(std::string piece_name);
 
-public:
+ public:
   crypto_storage();
   virtual ~crypto_storage();
 
@@ -38,23 +38,26 @@ public:
 namespace sin {
 
 class context : public global::flag_container {
-private:
+ private:
   std::string form_name;
   std::string assembly_name;
   std::vector<part *> args;
   node *trash_node;
 
-  template <typename T> void parse(T t) {
+  template <typename T>
+  void parse(T t) {
     args.push_back(create_simple_part<T>(trash_node, t));
   };
-  template <typename A, typename... B> void parse(A head, B... tail) {
+  template <typename A, typename... B>
+  void parse(A head, B... tail) {
     parse(head);
     parse(tail...);
   }
 
-public:
+ public:
   context() { assembly_name = "default"; }
-  template <typename... Args> context(node *trash, Args... args) {
+  template <typename... Args>
+  context(node *trash, Args... args) {
     trash_node = trash;
     parse(args...);
     assembly_name = "default";
@@ -71,13 +74,16 @@ public:
   std::vector<part *> &get_args() { return args; }
 };
 
-template <> inline void context::parse<part *>(part *p) { args.push_back(p); };
+template <>
+inline void context::parse<part *>(part *p) {
+  args.push_back(p);
+};
 
 class stub {
-protected:
+ protected:
   virtual void apply_user_input(context *context) = 0;
 
-public:
+ public:
   stub() {}
   virtual ~stub() {}
   virtual node *get_trash_node() = 0;
@@ -88,7 +94,8 @@ public:
     ctx.move_flags(instruction_flags);
     apply_user_input(&ctx);
   }
-  template <typename... Args> void t(Args... args) {
+  template <typename... Args>
+  void t(Args... args) {
     context ctx(get_trash_node(), args...);
     apply_user_input(&ctx);
   }
@@ -100,7 +107,8 @@ public:
     ctx.set_assembly_name(asm_name);
     apply_user_input(&ctx);
   }
-  template <typename... Args> void ta(std::string asm_name, Args... args) {
+  template <typename... Args>
+  void ta(std::string asm_name, Args... args) {
     context ctx(get_trash_node(), args...);
     ctx.set_assembly_name(asm_name);
     apply_user_input(&ctx);
@@ -119,7 +127,8 @@ public:
     ctx.set_form_name(name);
     apply_user_input(&ctx);
   }
-  template <typename... Args> void f(std::string name, Args... args) {
+  template <typename... Args>
+  void f(std::string name, Args... args) {
     context ctx(get_trash_node(), args...);
     ctx.set_form_name(name);
     apply_user_input(&ctx);
@@ -131,7 +140,7 @@ public:
   }
 };
 
-} // namespace sin
+}  // namespace sin
 
 struct branch_limit {
   std::uint64_t forward;
@@ -140,7 +149,7 @@ struct branch_limit {
 };
 
 class build_branch : public node, public printable_object {
-public:
+ public:
   build_branch(node *parent);
   ~build_branch();
   std::string to_string();
@@ -154,7 +163,7 @@ class build_root : public node,
                    public recursion_counter,
                    public sin::stub,
                    public printable_object {
-protected:
+ protected:
   build_states self_state;
   std::vector<memory_piece *> build_sequence;
   std::map<std::string, RAsm *> assemblers;
@@ -179,7 +188,7 @@ protected:
 
   invariant *make_invariant(form *blank);
 
-public:
+ public:
   build_root();
   virtual ~build_root();
 
@@ -228,7 +237,7 @@ public:
            std::function<std::uint64_t(part_wrapper *p)> current_wrapper);
   part *dd(std::string begin_name, std::string end_name);
   part *ddls(std::string begin_name, std::string end_name,
-                std::string limit_name, bool direction);
+             std::string limit_name, bool direction);
   part *vshd(std::string var_name);
   part *vszd(std::string var_name);
   part *frszd();
@@ -258,6 +267,6 @@ public:
   std::uint64_t get_entry_point();
 };
 
-} // namespace eg
+}  // namespace eg
 
 #endif

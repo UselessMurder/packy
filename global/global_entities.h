@@ -6,9 +6,11 @@
 #include <cstdint>
 #include <functional>
 #include <map>
+#include <unordered_map>
 #include <set>
 #include <string>
 #include <vector>
+#include <cryptopp/osrng.h>
 
 #define DEFER_NAME_1(x, y) x##y
 #define DEFER_NAME_2(x, y) DEFER_NAME_1(x, y)
@@ -66,6 +68,7 @@ public:
   flag_container();
   flag_container(const flag_container &fc);
   flag_container(std::initializer_list<std::uint8_t> current_flags);
+  flag_container(std::uint64_t current_flags);
   virtual ~flag_container();
   virtual bool check_flag(std::uint8_t flag_index);
   virtual void set_flag(std::uint8_t flag_index);
@@ -86,7 +89,7 @@ public:
 
 class random_sequence {
 private:
-  std::uint64_t random_sequence_seed;
+  CryptoPP::AutoSeededRandomPool rng;
   std::string alphanum;
   std::string alphanum_safe;
 
@@ -96,19 +99,16 @@ public:
   std::uint64_t generate_random_number();
   std::string generate_random_string(std::uint32_t length, bool is_safe);
   template <typename T> void random_shuffle_vector(std::vector<T> *v) {
-    std::srand(
-        std::chrono::high_resolution_clock::now().time_since_epoch().count() +
-        random_sequence_seed);
     std::random_shuffle(v->begin(), v->end(), [this](int i) -> int {
-      return static_cast<int>(this->generate_random_number()) % i;
+      return static_cast<std::uint32_t>(this->generate_random_number()) % i;
     });
-    random_sequence_seed += rand();
+  //std::random_shuffle(v->begin(), v->end());
   }
 };
 
 class consistent_sequence {
 private:
-  std::map<std::string, std::uint64_t> consistent_sequence_storage;
+  std::unordered_map<std::string, std::uint64_t> consistent_sequence_storage;
 
 public:
   consistent_sequence();
