@@ -55,7 +55,6 @@ void invariant::validate_variables(std::map<std::string, part *> *vars) {
 
 bool invariant::try_execute(global::flag_container fl,
                             std::vector<part *> *args) {
-
   build_root *root = find_node_by_flag<build_root>(this, type_flags::build_root,
                                                    {bypass_flags::parents});
   global::named_defer recursion_guard;
@@ -70,19 +69,16 @@ bool invariant::try_execute(global::flag_container fl,
         std::to_string(get_object_id()));
 
   if (check_flag(type_flags::invariant_recursive)) {
-    if (!root->is_recursion_counter())
-      return false;
+    if (!root->is_recursion_counter()) return false;
     root->up_recursion_counter();
     recursion_guard.set_defer([root]() { root->down_recursion_counter(); });
   }
 
   if (validator)
-    if (!validator(args))
-      return false;
+    if (!validator(args)) return false;
 
   std::map<std::string, std::string> regs;
-  if (!root->try_grab_registers(&registers, &regs))
-    return false;
+  if (!root->try_grab_registers(&registers, &regs)) return false;
   DEFER(root->free_registers(&regs););
 
   std::map<std::string, part *> vars;
@@ -93,10 +89,19 @@ bool invariant::try_execute(global::flag_container fl,
   for (std::uint32_t i = 0; i < args->size(); i++)
     vars[(*args_template)[i].first] = (*args)[i];
 
+  bool activated_branch = false;
+
+  for (auto a : *args) {
+    if (a->check_flag(type_flags::will_balanced)) {
+      activated_branch = true;
+      break;
+    }
+  }
+
   for (auto v : variables) {
     vars[v.first] = create_simple_part(root->get_trash_node(),
                                        root->get_stub_with_bitness(v.second));
-    if (balancer)
+    if (balancer || activated_branch)
       vars[v.first]->set_flag(type_flags::will_balanced);
   }
 
@@ -113,8 +118,7 @@ bool invariant::try_execute(global::flag_container fl,
     activation_group *ag = new activation_group(current, this);
     ag->set_balancer(balancer);
     ag->set_variables(&vars);
-    for (auto a : *args_template)
-      vars[a.first]->set_parent(ag);
+    for (auto a : *args_template) vars[a.first]->set_parent(ag);
     g = ag;
   } else {
     g = new group(current);
@@ -138,4 +142,4 @@ bool invariant::try_execute(global::flag_container fl,
   return true;
 }
 
-}; // namespace eg
+};  // namespace eg

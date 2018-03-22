@@ -273,8 +273,10 @@ void pe32_i686::find_library_init_code() {
   e.bf("lib_name", "common");
   e.f("load_rd", e.g("lib_name"), e.vshd("target"));
   e.f("push_rd", e.g("lib_name"));
+  e.f("push_rd", e.g("lib_name"));
   e.bsp("ebp_", eg::i8086::ebp);
   e.f("call_smd", e.g("ebp_"), "-", e.vshd("GetModuleHandle"));
+  e.f("pop_rd", e.g("lib_name"));
   e.f("test_rd_rd", e.g("eax_"), e.g("eax_"));
   e.f("branch", "nz", e.shd("dll_found"), e.shd("dll_not_found"));
   e.end();
@@ -409,6 +411,7 @@ std::uint32_t pe32_i686::build_code(std::vector<std::uint8_t> *stub,
   build_import_stub();
 
   e.start_segment("begin");
+
   e.t("pushad");
   e.bsp("ebp_", eg::i8086::ebp);
   e.f(e.gg({"fu"}), "push_rd", e.g("ebp_"));

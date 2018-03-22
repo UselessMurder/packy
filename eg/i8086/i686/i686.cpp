@@ -1727,6 +1727,13 @@ void i686::init_invariants() {
   iv = make_invariant(cf);
   iv->copy_flags(gg({"st", "ss", "fs", "up", "fu"}));
   iv->PROGRAMMER(EG->t(CAST, "push ", VARS["r"]););
+
+  iv = make_invariant(cf);
+  iv->copy_flags(gg({"ss", "up", "fu", "rc"}));
+  iv->PROGRAMMER(auto esp_ = global::cs.generate_unique_string("pr_regs");
+                 EG->bss(esp_, esp);
+                 EG->f(fl, "sub_rd_vd", g(esp_), std::uint64_t(4));
+                 EG->f(fl, "mov_md_rd", g(esp_), VARS["r"]); EG->fr(esp_););
   // push_rd end
 
   // push_vd begin
@@ -1736,6 +1743,13 @@ void i686::init_invariants() {
   iv = make_invariant(cf);
   iv->copy_flags(gg({"ss", "fs", "up", "fu"}));
   iv->PROGRAMMER(EG->t(CAST, "push ", VARS["a"]););
+
+  iv = make_invariant(cf);
+  iv->copy_flags(gg({"ss", "up", "fu", "rc"}));
+  iv->PROGRAMMER(auto esp_ = global::cs.generate_unique_string("pr_regs");
+                 EG->bss(esp_, esp);
+                 EG->f(fl, "sub_rd_vd", g(esp_), std::uint64_t(4));
+                 EG->f(fl, "mov_md_vd", g(esp_), VARS["a"]); EG->fr(esp_););
 
   iv = make_invariant(cf);
   iv->add_register("r", "common");
@@ -1768,6 +1782,13 @@ void i686::init_invariants() {
   iv = make_invariant(cf);
   iv->copy_flags(gg({"st", "ss", "fs", "up", "fu"}));
   iv->PROGRAMMER(EG->t(CAST, "pop ", VARS["r"]););
+
+  iv = make_invariant(cf);
+  iv->copy_flags(gg({"ss", "up", "fu", "rc"}));
+  iv->PROGRAMMER(auto esp_ = global::cs.generate_unique_string("pr_regs");
+                 EG->bss(esp_, esp); EG->f(fl, "mov_rd_md", VARS["r"], g(esp_));
+                 EG->f(fl, "add_rd_vd", g(esp_), std::uint64_t(4));
+                 EG->fr(esp_););
   // pop_rd end
 
   // pop end
@@ -1782,6 +1803,15 @@ void i686::init_invariants() {
   iv = make_invariant(cf);
   iv->copy_flags(gg({"st", "ss", "fs", "up", "fu"}));
   iv->PROGRAMMER(EG->t(CAST, "mov ", VARS["r1"], ",", VARS["r2"]););
+
+  iv = make_invariant(cf);
+  iv->copy_flags(gg({"st", "fs", "up", "fu", "rc"}));
+  iv->VALIDATOR(
+      if (get_part_value<std::string>((*vars)[0]) == esp ||
+          get_part_value<std::string>((*vars)[1]) == esp) return false;
+      return true;);
+  iv->PROGRAMMER(EG->f(fl, "push_rd", VARS["r2"]);
+                 EG->f(fl, "pop_rd", VARS["r1"]););
   // mov_rd_rd end
 
   // mov_rd_vd begin
@@ -1792,6 +1822,14 @@ void i686::init_invariants() {
   iv = make_invariant(cf);
   iv->copy_flags(gg({"st", "ss", "fs", "up", "fu"}));
   iv->PROGRAMMER(EG->t(CAST, "mov ", VARS["r"], ",", VARS["a"]););
+
+  iv = make_invariant(cf);
+  iv->copy_flags(gg({"fs", "up", "fu", "rc"}));
+  iv->VALIDATOR(
+      if (get_part_value<std::string>((*vars)[0]) == esp) return false;
+      return true;);
+  iv->PROGRAMMER(EG->f(fl, "push_vd", VARS["a"]);
+                 EG->f(fl, "pop_rd", VARS["r"]););
   // mov_rd_vd end
 
   // mov_rd_md begin
@@ -2191,6 +2229,18 @@ void i686::init_invariants() {
   iv->set_flag(type_flags::stack_safe);
   iv->copy_flags(gg({"ss", "fs", "up", "fu"}));
   iv->PROGRAMMER(EG->t(CAST, "add ", VARS["r"], ",", VARS["a"]););
+
+  iv = make_invariant(cf);
+  iv->set_flag(type_flags::stack_safe);
+  iv->copy_flags(gg({"ss", "up", "fu", "rc"}));
+  iv->VALIDATOR(
+      if ((*vars)[1]->check_flag(type_flags::dependence) ||
+          (*vars)[1]->check_flag(type_flags::will_balanced)) return false;
+      if (get_part_value<std::uint64_t>((*vars)[1]) > 50) return false;
+      return true;);
+  iv->PROGRAMMER(for (std::uint64_t i = 0;
+                      i < get_part_value<std::uint64_t>(VARS["a"]); i++)
+                     EG->f(fl, "inc_rd", VARS["r"]););
   // add_rd_vd end
 
   // add_rd_md begin
@@ -2375,6 +2425,18 @@ void i686::init_invariants() {
   iv->set_flag(type_flags::stack_safe);
   iv->copy_flags(gg({"ss", "fs", "up", "fu"}));
   iv->PROGRAMMER(EG->t(CAST, "sub ", VARS["r"], ",", VARS["a"]););
+
+  iv = make_invariant(cf);
+  iv->set_flag(type_flags::stack_safe);
+  iv->copy_flags(gg({"ss", "fu", "rc"}));
+  iv->VALIDATOR(
+      if ((*vars)[1]->check_flag(type_flags::dependence) ||
+          (*vars)[1]->check_flag(type_flags::will_balanced)) return false;
+      if (get_part_value<std::uint64_t>((*vars)[1]) > 50) return false;
+      return true;);
+  iv->PROGRAMMER(for (std::uint64_t i = 0;
+                      i < get_part_value<std::uint64_t>(VARS["a"]); i++)
+                     EG->f(fl, "dec_rd", VARS["r"]););
   // sub_rd_vd end
 
   // sub_rd_md begin
@@ -3092,7 +3154,6 @@ void i686::init_invariants() {
   // inc begin
 
   // inc_rd begin
-
   cf = make_form("inc_rd");
   cf->add_argument("r");
 
@@ -3100,10 +3161,12 @@ void i686::init_invariants() {
   iv->copy_flags(gg({"st", "fs", "ss", "up", "fu"}));
   iv->PROGRAMMER(EG->t(CAST, "inc ", VARS["r"]););
 
+  iv = make_invariant(cf);
+  iv->copy_flags(gg({"fs", "ss", "up", "fu", "rc"}));
+  iv->PROGRAMMER(EG->f(fl, "add_rd_vd", VARS["r"], std::uint64_t(1)););
   // inc_rd end
 
   // inc_rb begin
-
   cf = make_form("inc_rb");
   cf->add_argument("r");
 
@@ -3111,6 +3174,9 @@ void i686::init_invariants() {
   iv->copy_flags(gg({"st", "fs", "ss", "up", "fu"}));
   iv->PROGRAMMER(EG->t(CAST, "inc ", VARS["r"]););
 
+  iv = make_invariant(cf);
+  iv->copy_flags(gg({"fs", "ss", "up", "fu", "rc"}));
+  iv->PROGRAMMER(EG->f(fl, "add_rd_vd", VARS["r"], std::uint64_t(1)););
   // inc_rb end
 
   // inc end
@@ -3118,7 +3184,6 @@ void i686::init_invariants() {
   // dec begin
 
   // dec_rd begin
-
   cf = make_form("dec_rd");
   cf->add_argument("r");
 
@@ -3126,10 +3191,12 @@ void i686::init_invariants() {
   iv->copy_flags(gg({"st", "fs", "ss", "up", "fu"}));
   iv->PROGRAMMER(EG->t(CAST, "dec ", VARS["r"]););
 
+  iv = make_invariant(cf);
+  iv->copy_flags(gg({"fs", "ss", "up", "fu", "rc"}));
+  iv->PROGRAMMER(EG->f(fl, "sub_rd_vd", VARS["r"], std::uint64_t(1)););
   // dec_rd end
 
   // dec_rb begin
-
   cf = make_form("dec_rb");
   cf->add_argument("r");
 
@@ -3137,6 +3204,9 @@ void i686::init_invariants() {
   iv->copy_flags(gg({"st", "fs", "ss", "up", "fu"}));
   iv->PROGRAMMER(EG->t(CAST, "dec ", VARS["r"]););
 
+  iv = make_invariant(cf);
+  iv->copy_flags(gg({"fs", "ss", "up", "fu", "rc"}));
+  iv->PROGRAMMER(EG->f(fl, "sub_rd_vd", VARS["r"], std::uint64_t(1)););
   // dec_rb end
 
   // dec end
