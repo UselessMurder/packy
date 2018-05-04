@@ -1,3 +1,8 @@
+// This is an open source non-commercial project. Dear PVS-Studio, please check
+// it.
+
+// PVS-Studio Static Code Analyzer for C, C++ and C#: http://www.viva64.com
+
 #include <cry/crypto.h>
 #include <mk/pe32_i686/pe32_i686.h>
 
@@ -66,6 +71,17 @@ std::uint32_t pe32_i686::get_ExitProcess_hash() {
   std::uint32_t result = get_KERNEL32_hash();
   cry::crc32 c;
   c.set(exitprocess);
+  result += c.get();
+  return result;
+}
+
+std::uint32_t pe32_i686::get_VirtualProtect_hash() {
+  std::vector<std::uint8_t> virtualprotect = {0x56, 0x69, 0x72, 0x74, 0x75,
+                                              0x61, 0x6c, 0x50, 0x72, 0x6f,
+                                              0x74, 0x65, 0x63, 0x74, 0x0};
+  std::uint32_t result = get_KERNEL32_hash();
+  cry::crc32 c;
+  c.set(virtualprotect);
   result += c.get();
   return result;
 }
@@ -377,6 +393,237 @@ void pe32_i686::build_import_stub() {
     e.fr("iat_base");
   }
 
+  e.f("jump", e.shd("reloc"));
+  // e.f("jump", e.shd("tls_stub"));
+  e.end();
+}
+
+void pe32_i686::build_reloc_stub() {
+  e.start_segment("reloc");
+  e.bf("D", "common");
+  e.bsp("ebp_", eg::i8086::ebp);
+  e.f("mov_rd_smd", e.g("D"), e.g("ebp_"), "-", e.vshd("base"));
+  e.f("sub_rd_vd", e.g("D"),
+      std::uint64_t(get_ld()->get_optional_header()->image_base));
+  e.fr("ebp_");
+  auto relocs = get_ld()->get_relocations();
+  for (auto r : (*relocs)) {
+    e.bf("tmp", "common");
+    e.f("abs_r", e.g("tmp"), std::uint64_t(r));
+    e.f("add_md_rd", e.g("tmp"), e.g("D"));
+    e.fr("tmp");
+  }
+  e.fr("D");
+  e.f("jump", e.shd("tls_stub"));
+  e.end();
+}
+
+void pe32_i686::build_tls_stub() {
+  e.start_segment("tls_directory");
+  std::vector<std::uint8_t> tmp;
+  std::uint32_t diff = 0;
+  if (get_ld()->is_tls_exists()) {
+    diff = get_ld()->get_tls_directory()->end_address_of_raw_data -
+           get_ld()->get_tls_directory()->start_address_of_raw_data;
+    e.add_address("start_address_of_raw_data", "tls_data",
+                  get_ld()->get_optional_header()->image_base);
+    e.add_address("end_address_of_raw_data", "tls_data",
+                  get_ld()->get_optional_header()->image_base + diff);
+  } else {
+    e.add_data("start_address_of_raw_data", 4);
+    e.add_data("end_address_of_raw_data", 4);
+  }
+  e.add_address("tls_index_addr", "tls_index",
+                get_ld()->get_optional_header()->image_base);
+  e.add_address("tls_callbacks_addr", "tls_callbacks",
+                get_ld()->get_optional_header()->image_base);
+  if (get_ld()->is_tls_exists()) {
+    global::value_to_vector(
+        &tmp, get_ld()->get_tls_directory()->size_of_zero_fill,
+        sizeof(get_ld()->get_tls_directory()->size_of_zero_fill));
+    e.add_data("size_of_zero_fill", &tmp);
+    global::value_to_vector(
+        &tmp, get_ld()->get_tls_directory()->characteristics,
+        sizeof(get_ld()->get_tls_directory()->characteristics));
+    e.add_data("characteristics", &tmp);
+  } else {
+    e.add_data("size_of_zero_fill", 4);
+    e.add_data("characteristics", 4);
+  }
+  e.end();
+
+  if (get_ld()->is_tls_exists()) {
+    tmp.clear();
+    get_ld()->get_part_of_image(
+        &tmp,
+        get_ld()->get_tls_directory()->start_address_of_raw_data -
+            get_ld()->get_optional_header()->image_base,
+        diff);
+
+    e.add_data("tls_data", &tmp);
+  }
+
+  e.add_data("tls_index", 4);
+
+  e.start_segment("tls_callbacks");
+  e.add_address("first_line_addr", "first_line",
+                get_ld()->get_optional_header()->image_base);
+  e.add_data("tls_callbacks_end", 4);
+  e.end();
+
+  e.start_segment("first_line");
+  e.t("ret 0xC");
+  e.end();
+
+  e.start_segment("tls_stub");
+  if (get_ld()->is_tls_exists()) {
+    e.bf("src", "common");
+    e.bf("dst", "common");
+    e.bf("data", "common");
+    e.f("abs_r", e.g("src"), e.shd("tls_index"));
+    e.f("abs_r", e.g("dst"),
+        std::uint64_t(get_ld()->get_tls_directory()->address_of_index -
+                      get_ld()->get_optional_header()->image_base));
+    e.f("mov_rd_md", e.g("data"), e.g("src"));
+    e.f("mov_md_rd", e.g("dst"), e.g("data"));
+    e.f("abs_r", e.g("src"), e.shd("tls_index_addr"));
+    e.f("mov_md_rd", e.g("src"), e.g("dst"));
+    e.f("abs_r", e.g("data"),
+        std::uint64_t(get_ld()->get_tls_directory()->address_of_call_backs -
+                      get_ld()->get_optional_header()->image_base));
+    e.f("add_rd_vd", e.g("src"), std::uint64_t(4));
+    e.f("mov_md_rd", e.g("src"), e.g("data"));
+    e.fr("src");
+    e.f("jump", e.shd("tls_stub_compare"));
+    e.end();
+
+    e.start_segment("tls_stub_compare");
+    e.f("test_md_vd", e.g("data"), std::uint64_t(0));
+    e.f("branch", "nz", e.shd("tls_stub_loop"), e.shd("tls_stub_end"));
+    e.end();
+
+    e.start_segment("tls_stub_loop");
+    e.push_registers({e.g("dst"), e.g("data")});
+    e.f("push_vd", std::uint64_t(0));
+    e.f("push_vd", std::uint64_t(1));
+    e.f("push_rd", e.g("dst"));
+    e.f("call_md", e.g("data"));
+    e.pop_registers({e.g("dst"), e.g("data")});
+    e.f("add_rd_vd", e.g("data"), std::uint64_t(4));
+    e.f("jump", e.shd("tls_stub_compare"));
+    e.end();
+
+    e.start_segment("tls_stub_end");
+    e.fr("data");
+    e.fr("dst");
+    get_ld()->wipe_tls_directory();
+  }
+  e.f("jump", e.shd("mprotect"));
+
+  e.end();
+}
+
+void pe32_i686::build_reloc_table() {
+  e.start_segment("reloc_directory");
+
+  e.add_processed_data("reloc_directory_tables", [](eg::build_root *root,
+                                                    eg::dependence_line *dl) {
+    std::vector<std::uint8_t> reloc_table;
+    if (root->get_state() >= eg::build_states::translating) {
+      std::map<std::uint32_t, std::vector<std::uint32_t>> used;
+      std::vector<std::uint32_t> need;
+      std::uint64_t shift = 0;
+      root->get_depended_memory(
+          "tls_directory",
+          [&shift](eg::memory_piece *mp) { shift = mp->get_shift(); },
+          {eg::dependence_flags::shift});
+      for (std::uint32_t i = 0; i <= 12; i += 4)
+        need.push_back(static_cast<std::uint32_t>(shift) + i);
+
+      root->get_depended_memory(
+          "first_line_addr",
+          [&shift](eg::memory_piece *mp) { shift = mp->get_shift(); },
+          {eg::dependence_flags::shift});
+
+      need.push_back(static_cast<std::uint32_t>(shift));
+
+      for (auto addr : need) {
+        std::uint32_t tmp = (addr / 4096) * 4096;
+        if (used.count(tmp) != 0) {
+          used[tmp].push_back(addr - tmp);
+        } else {
+          used.insert(std::make_pair(tmp, std::vector<uint32_t>()));
+          used[tmp].push_back(addr - tmp);
+        }
+      }
+
+      std::vector<uint8_t> tmpv;
+      for (auto table : used) {
+        global::value_to_vector(&tmpv, table.first, sizeof(table.first));
+        reloc_table.insert(reloc_table.end(), tmpv.begin(), tmpv.end());
+        std::uint32_t size =
+            sizeof(table.first) + (table.second.size() * 2) + 4;
+        if (size % 4 != 0) size += 2;
+        global::value_to_vector(&tmpv, size, sizeof(size));
+        reloc_table.insert(reloc_table.end(), tmpv.begin(), tmpv.end());
+        size = 0;
+        for (auto sh : table.second) {
+          size++;
+          global::value_to_vector(
+              &tmpv, std::uint16_t(12288) | static_cast<std::uint16_t>(sh),
+              sizeof(std::uint16_t));
+          reloc_table.insert(reloc_table.end(), tmpv.begin(), tmpv.end());
+        }
+        if (size % 2 != 0) {
+          global::value_to_vector(&tmpv, std::uint16_t(0),
+                                  sizeof(std::uint16_t));
+          reloc_table.insert(reloc_table.end(), tmpv.begin(), tmpv.end());
+        }
+      }
+      global::value_to_vector(&tmpv, std::uint64_t(0), sizeof(std::uint64_t));
+      reloc_table.insert(reloc_table.end(), tmpv.begin(), tmpv.end());
+      dl->set_flag(eg::type_flags::node_cached);
+    } else
+      reloc_table.resize(5 * 8);
+    dl->set_content(&reloc_table);
+  });
+
+  e.end();
+}
+
+void pe32_i686::build_mprotect_stub() {
+  e.start_segment("mprotect");
+  e.bsp("eax_", eg::i8086::eax);
+  e.bsp("ebp_", eg::i8086::ebp);
+  e.bf("trash", "common");
+  e.f("lea_rd_smd", e.g("trash"), e.g("ebp_"), "-", e.vshd("trash_ptr"));
+  for (std::uint64_t i = 0; i < get_ld()->get_sections_count(); i++) {
+    e.bf("beg", "common");
+    e.push_registers({e.g("trash")});
+    e.f("push_rd", e.g("trash"));
+    e.f("push_vd", std::uint64_t(get_ld()->section_flags_to_memory_flags(
+                       get_ld()->get_section_header(i)->characteristics)));
+    e.f("push_vd", std::uint64_t(get_ld()->get_section_header(i)->misc));
+    e.f("abs_r", e.g("beg"),
+        std::uint64_t(get_ld()->get_section_header(i)->virtual_address));
+    e.f("push_rd", e.g("beg"));
+    e.f("call_smd", e.g("ebp_"), "-", e.vshd("VirtualProtect"));
+    e.pop_registers({e.g("trash")});
+    e.fr("beg");
+  }
+  e.bf("beg", "common");
+  e.f("abs_r", e.g("beg"), get_ld()->get_begin_of_stub());
+  e.push_registers({e.g("trash")});
+  e.f("push_rd", e.g("trash"));
+  e.f("push_vd", std::uint64_t(0x20));
+  e.f("push_vd", e.ssd());
+  e.f("push_rd", e.g("beg"));
+  e.f("call_smd", e.g("ebp_"), "-", e.vshd("VirtualProtect"));
+  e.pop_registers({e.g("trash")});
+  e.fr("beg");
+  e.fr("trash");
+  e.fr("ebp_");
+  e.fr("eax_");
   e.f("jump", e.shd("end"));
   e.end();
 }
@@ -384,6 +631,7 @@ void pe32_i686::build_import_stub() {
 std::uint32_t pe32_i686::build_code(std::vector<std::uint8_t> *stub,
                                     std::vector<std::uint8_t> *data) {
   e.set_base(get_ld()->get_begin_of_stub());
+
   e.init_state();
 
   e.add_data("image", data);
@@ -395,11 +643,13 @@ std::uint32_t pe32_i686::build_code(std::vector<std::uint8_t> *stub,
   e.add_var("dll_base", 4);
   e.add_var("current_dll", 4);
   e.add_var("func", 4);
+  e.add_var("trash_ptr", 4);
   e.add_var("message_box_switch", 1);
   e.add_var("LoadLibrary", 4);
   e.add_var("GetModuleHandle", 4);
   e.add_var("GetProcAddr", 4);
   e.add_var("ExitProcess", 4);
+  e.add_var("VirtualProtect", 4);
   e.add_var("MessageBox", 4);
 
   search_expx_init_code();
@@ -408,7 +658,11 @@ std::uint32_t pe32_i686::build_code(std::vector<std::uint8_t> *stub,
   end_init_code();
   find_library_init_code();
   load_function_init_code();
+  build_mprotect_stub();
   build_import_stub();
+  build_tls_stub();
+  build_reloc_stub();
+  build_reloc_table();
 
   e.start_segment("begin");
 
@@ -466,6 +720,13 @@ std::uint32_t pe32_i686::build_code(std::vector<std::uint8_t> *stub,
   e.f("store_rd", e.vshd("ExitProcess"), e.g("tmp"));
   e.fr("tmp");
 
+  e.f("store_rd", e.vshd("hash"), std::uint64_t(get_VirtualProtect_hash()));
+  e.f("invoke", e.shd("get_apix"));
+  e.bf("tmp", "common");
+  e.f("load_rd", e.g("tmp"), e.vshd("func"));
+  e.f("store_rd", e.vshd("VirtualProtect"), e.g("tmp"));
+  e.fr("tmp");
+
   e.f("jump", e.shd("import"));
 
   e.bsp("esp_", eg::i8086::esp);
@@ -484,7 +745,14 @@ std::uint32_t pe32_i686::build_code(std::vector<std::uint8_t> *stub,
 
   e.build(stub);
 
-  return static_cast<std::uint32_t>(e.get_entry_point());
+  tls_rva = static_cast<std::uint32_t>(e.get_memory_rva("tls_directory"));
+
+  reloc_directory_params.first =
+      static_cast<std::uint32_t>(e.get_memory_rva("reloc_directory"));
+  reloc_directory_params.second =
+      static_cast<std::uint32_t>(e.get_memory_payload_size("reloc_directory"));
+
+  return static_cast<std::uint32_t>(e.get_memory_rva("begin"));
 }
 
 void pe32_i686::make() {
@@ -493,7 +761,8 @@ void pe32_i686::make() {
   std::vector<uint8_t> stub;
   cmpr.compress(data);
   std::uint32_t begin = build_code(&stub, &data);
-  write_header(get_ld()->get_rebuilded_header(stub.size(), begin));
+  write_header(get_ld()->get_rebuilded_header(stub.size(), begin, tls_rva,
+                                              reloc_directory_params));
   get_ld()->resize_with_file_align(&stub);
   write_data(&stub);
   file->close();

@@ -1,3 +1,7 @@
+// This is an open source non-commercial project. Dear PVS-Studio, please check it.
+
+// PVS-Studio Static Code Analyzer for C, C++ and C#: http://www.viva64.com
+
 #include <cry/crypto.h>
 #include <eg/i8086/i686/i686.h>
 
@@ -52,7 +56,7 @@ i686::i686() : i8086() {
 
   init_assemblers();
   init_invariants();
-  set_recursion_counter(5);
+  set_recursion_counter(0);
   get_build_node()->select_node();
 }
 i686::~i686() {}

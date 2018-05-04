@@ -1,7 +1,11 @@
-#include <eg/base/base_eg.h>
+// This is an open source non-commercial project. Dear PVS-Studio, please check
+// it.
 
-#include <cstdint>
+// PVS-Studio Static Code Analyzer for C, C++ and C#: http://www.viva64.com
+
+#include <eg/base/base_eg.h>
 #include <global/global_entities.h>
+#include <cstdint>
 #include <sstream>
 #include <string>
 
@@ -13,10 +17,8 @@ part::part(const part &obj) : node(obj) {}
 part::~part() {}
 
 bool part::in_trash() {
-  if (parent_node == reinterpret_cast<node *>(0))
-    return true;
-  if (parent_node->check_flag(type_flags::trash_branch))
-    return true;
+  if (parent_node == reinterpret_cast<node *>(0)) return true;
+  if (parent_node->check_flag(type_flags::trash_branch)) return true;
   return false;
 }
 
@@ -35,6 +37,17 @@ dependence_part::dependence_part(node *parent) : part(parent) {
   set_flag(type_flags::dependence);
 }
 dependence_part::~dependence_part() {}
+
+dependence_part::dependence_part(const dependence_part &obj) : part(obj) {
+  resolver = obj.resolver;
+}
+
+dependence_part &dependence_part::operator=(dependence_part &obj) {
+  node::operator=(obj);
+  this->resolver = obj.resolver;
+  return *this;
+}
+
 void dependence_part::set_resolver(
     std::function<std::uint64_t(part *p)> current_resolver) {
   resolver = current_resolver;
@@ -63,6 +76,17 @@ part_wrapper::part_wrapper(const part_wrapper &obj) : part(obj) {
     throw std::domain_error("Too many childs for wrapper with id: " +
                             std::to_string(get_object_id()));
   node_cast<part>(childs[0])->clone()->set_parent(this);
+}
+
+part_wrapper &part_wrapper::operator=(part_wrapper &obj) {
+  node::operator=(obj);
+  values = obj.values;
+  wrapper = obj.wrapper;
+  if (childs.size() != 1)
+    throw std::domain_error("Too many childs for wrapper with id: " +
+                            std::to_string(get_object_id()));
+  node_cast<part>(childs[0])->clone()->set_parent(this);
+  return *this;
 }
 
 part_wrapper::~part_wrapper() {}
@@ -149,11 +173,19 @@ part *part_wrapper::clone() { return new part_wrapper(*this); }
 
 cached_dependence::cached_dependence(node *parent,
                                      std::vector<std::string> names)
-    : dependence_part(parent), string_container(names) {}
+    : dependence_part(parent), string_container(names) {
+  cached_value = 0;
+}
 
 cached_dependence::cached_dependence(const cached_dependence &obj)
     : dependence_part(obj), string_container(obj) {
   cached_value = obj.cached_value;
+}
+
+cached_dependence &cached_dependence::operator=(cached_dependence &obj) {
+  dependence_part::operator=(obj);
+  cached_value = obj.cached_value;
+  return *this;
 }
 
 cached_dependence::~cached_dependence() {}
@@ -171,4 +203,4 @@ void cached_dependence::set_cached_value(std::uint64_t value) {
 
 part *cached_dependence::clone() { return new cached_dependence(*this); }
 
-} // namespace eg
+}  // namespace eg

@@ -1,3 +1,8 @@
+// This is an open source non-commercial project. Dear PVS-Studio, please check
+// it.
+
+// PVS-Studio Static Code Analyzer for C, C++ and C#: http://www.viva64.com
+
 #include <cry/crypto.h>
 #include <cryptopp/aes.h>
 #include <cryptopp/filters.h>
@@ -6,7 +11,7 @@
 
 namespace cry {
 
-crc64::crc64() {}
+crc64::crc64() { value = 0; }
 crc64::crc64(std::vector<std::uint8_t> &data) { set(data); }
 crc64::~crc64() {}
 void crc64::set(std::vector<std::uint8_t> &data) {
@@ -36,7 +41,7 @@ void crc64::set(std::vector<std::uint8_t> &data) {
 }
 std::uint64_t crc64::get() { return value; }
 
-crc32::crc32() {}
+crc32::crc32() { value = 0; }
 crc32::crc32(std::vector<std::uint8_t> &data) { set(data); }
 crc32::~crc32() {}
 void crc32::set(std::vector<std::uint8_t> &data) {

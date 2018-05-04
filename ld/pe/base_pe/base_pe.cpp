@@ -1,7 +1,12 @@
-#include <chrono>
-#include <cstdlib>
+// This is an open source non-commercial project. Dear PVS-Studio, please check
+// it.
+
+// PVS-Studio Static Code Analyzer for C, C++ and C#: http://www.viva64.com
+
 #include <ld/pe/base_pe/base_pe.h>
 #include <stdio.h>
+#include <chrono>
+#include <cstdlib>
 
 namespace ld::pe {
 
@@ -32,9 +37,12 @@ image_section_header *base_pe::get_section_header(std::uint64_t index) {
       &image[section_headers[index]]);
 }
 
-image_import_descriptor *
-base_pe::get_import_descriptor(std::uint32_t rva) {
+image_import_descriptor *base_pe::get_import_descriptor(std::uint32_t rva) {
   return reinterpret_cast<image_import_descriptor *>(&image[rva]);
+}
+
+image_base_relocation *base_pe::get_base_relocation(std::uint32_t rva) {
+  return reinterpret_cast<image_base_relocation *>(&image[rva]);
 }
 
 std::vector<library> *base_pe::get_import() { return &import; }
@@ -43,29 +51,20 @@ bool base_pe::parse() {
   bool result = true;
   file->open();
   result = read_dos_header_from_file();
-  if (result)
-    result = is_valid_mz();
-  if (result)
-    result = read_dos_stub_from_file();
-  if (result)
-    result = read_nt_signature_from_file();
-  if (result)
-    result = is_valid_pe();
-  if (result)
-    result = read_file_header_from_file();
-  if (result)
-    result = read_optional_header_from_file();
-  if (result)
-    result = is_valid_nt_magic();
-  if (result)
-    continue_parsing();
+  if (result) result = is_valid_mz();
+  if (result) result = read_dos_stub_from_file();
+  if (result) result = read_nt_signature_from_file();
+  if (result) result = is_valid_pe();
+  if (result) result = read_file_header_from_file();
+  if (result) result = read_optional_header_from_file();
+  if (result) result = is_valid_nt_magic();
+  if (result) continue_parsing();
   file->close();
   return result;
 }
 
 bool base_pe::read_dos_header_from_file() {
-  if (file->get_file_size() < sizeof(image_dos_header))
-    return false;
+  if (file->get_file_size() < sizeof(image_dos_header)) return false;
   file->set_position(0);
   file->read_bytes(image, sizeof(image_dos_header));
   dos_header = 0;
@@ -73,8 +72,7 @@ bool base_pe::read_dos_header_from_file() {
 }
 
 bool base_pe::read_dos_stub_from_file() {
-  if (file->get_file_size() < get_dos_header()->e_lfanew)
-    return false;
+  if (file->get_file_size() < get_dos_header()->e_lfanew) return false;
   file->set_position(sizeof(image_dos_header));
   std::vector<std::uint8_t> content;
   file->read_bytes(content,
@@ -85,8 +83,7 @@ bool base_pe::read_dos_stub_from_file() {
 }
 
 bool base_pe::read_nt_signature_from_file() {
-  if (file->get_file_size() < get_dos_header()->e_lfanew + 4)
-    return false;
+  if (file->get_file_size() < get_dos_header()->e_lfanew + 4) return false;
   file->set_position(get_dos_header()->e_lfanew);
   std::vector<std::uint8_t> content;
   file->read_bytes(content, 4);
@@ -156,8 +153,7 @@ void base_pe::read_sections_from_file(std::uint64_t shift, std::uint32_t align,
 }
 
 void base_pe::parse_import(image_data_directory *directories) {
-  if (directories[1].size == 0)
-    return;
+  if (directories[1].size == 0) return;
   std::uint32_t begin = directories[1].virtual_address;
   for (std::uint32_t i = 0;
        i * sizeof(image_import_descriptor) < directories[1].size; i++) {
@@ -169,6 +165,9 @@ void base_pe::parse_import(image_data_directory *directories) {
         get_import_descriptor(begin + i * sizeof(image_import_descriptor))
             ->name,
         lib.name);
+    wipe_ascii_string(
+        get_import_descriptor(begin + i * sizeof(image_import_descriptor))
+            ->name);
     lib.iat_begin =
         get_import_descriptor(begin + i * sizeof(image_import_descriptor))
             ->first_thunk;
@@ -176,7 +175,40 @@ void base_pe::parse_import(image_data_directory *directories) {
         get_import_descriptor(begin + i * sizeof(image_import_descriptor))
             ->original_first_thunk,
         lib.functions);
+    wipe_thuncks(
+        get_import_descriptor(begin + i * sizeof(image_import_descriptor))
+            ->original_first_thunk);
+    global::wipe_memory(image, begin + i * sizeof(image_import_descriptor),
+                        sizeof(image_import_descriptor));
     import.push_back(lib);
+  }
+}
+
+void base_pe::parse_relocations(image_data_directory *directories) {
+  if (directories[5].size == 0) return;
+  std::uint32_t tmp = 0;
+  for (std::uint32_t i = directories[5].virtual_address;
+       i - directories[5].virtual_address < directories[5].size;
+       i += tmp) {
+    if (get_base_relocation(i)->size_of_block == 0 &&
+        get_base_relocation(i)->virtual_address == 0)
+      return;
+    std::uint32_t beg = i + sizeof(image_base_relocation);
+    std::uint32_t count = (get_base_relocation(i)->size_of_block -
+                           sizeof(image_base_relocation)) /
+                          2;
+    while (count) {
+      std::uint16_t descriptor = *((std::uint16_t *)&image[beg]);
+      if (((descriptor & 61440) >> 12) == 3 ||
+          ((descriptor & 61440) >> 12) == 10) {
+        relocations.push_back(get_base_relocation(i)->virtual_address +
+                              (descriptor & 4095));
+      }
+      count--;
+      beg += 2;
+    }
+    tmp = get_base_relocation(i)->size_of_block;
+    global::wipe_memory(image, i, get_base_relocation(i)->size_of_block);
   }
 }
 
@@ -192,8 +224,7 @@ void base_pe::is_valid_sections_size(std::uint64_t size_of_headers) {
 bool base_pe::is_valid_mz() {
   std::uint8_t image_dos_signature[2] = {0x4D, 0x5A};
   for (std::uint8_t i = 0; i < 2; i++) {
-    if (image_dos_signature[i] != image[dos_header + i])
-      return false;
+    if (image_dos_signature[i] != image[dos_header + i]) return false;
   }
   return true;
 }
@@ -201,19 +232,16 @@ bool base_pe::is_valid_mz() {
 bool base_pe::is_valid_pe() {
   std::uint8_t image_nt_signature[4] = {0x50, 0x45, 0x0, 0x0};
   for (std::uint8_t i = 0; i < 4; i++) {
-    if (image[nt_signature + i] != image_nt_signature[i])
-      return false;
+    if (image[nt_signature + i] != image_nt_signature[i]) return false;
   }
   return true;
 }
 
 void base_pe::is_valid_data_directories(std::uint32_t count,
                                         image_data_directory *directories) {
-  if (count != 16)
-    throw std::domain_error("Data directories count is invalid");
+  if (count != 16) throw std::domain_error("Data directories count is invalid");
   for (std::uint32_t i = 0; i < count; i++) {
-    if (directories[i].size == 0)
-      continue;
+    if (directories[i].size == 0) continue;
     std::uint64_t position =
         rva_to_file_position(directories[i].virtual_address);
     if (position + directories[i].size > file->get_file_size())
@@ -255,4 +283,70 @@ void base_pe::read_ascii_string_from_image(std::uint32_t rva,
   throw std::domain_error("Size of string is more than size of file");
 }
 
-} // namespace ld::pe
+union unicode_char {
+  std::uint16_t unicode;
+  std::uint8_t byte[2];
+};
+
+void base_pe::read_unicode_string_from_image(std::uint32_t rva, std::vector<uint8_t> &string) {
+  string.clear();
+  for(std::uint32_t i = rva; (i < image.size()) && (i + 1 < image.size()) ; i += 2) {
+    unicode_char ch;
+    ch.byte[0] = image[i];
+    ch.byte[1] = image[i + 1];
+    string.push_back(image[i]);
+    string.push_back(image[i + 1]);
+    if(ch.unicode == 0) {
+      if(string.size() % 2 != 0)
+        throw std::domain_error("Incorrect unicode string!");
+      return;
+    }
+  }
+  throw std::domain_error("Size of string is more than size of file");
+}
+
+void base_pe::wipe_ascii_string(std::uint32_t rva) {
+  for (std::uint32_t i = rva; i < image.size(); i++) {
+    if (image[i] == 0) {
+      return;
+    }
+    image[i] = 0;
+  }
+  throw std::domain_error("Size of string is more than size of file");
+}
+
+void base_pe::wipe_unicode_string(std::uint32_t rva) {
+  for(std::uint32_t i = rva; (i < image.size()) && (i + 1 < image.size()) ; i += 2) {
+    unicode_char ch;
+    ch.byte[0] = image[i];
+    ch.byte[1] = image[i + 1];
+    if(ch.unicode == 0) {
+      return;
+    }
+    image[i] = 0;
+    image[i + 1] = 0;
+  }
+  throw std::domain_error("Size of string is more than size of file");
+}
+
+void base_pe::wipe_symbols(std::uint32_t begin) {}
+
+std::uint64_t base_pe::get_sections_count() { return section_headers.size(); }
+
+std::uint32_t base_pe::section_flags_to_memory_flags(
+    std::uint32_t section_flags) {
+  global::tag_container tmp;
+  if (section_flags & 0x20000000) tmp.add_tag("x");
+  if (section_flags & 0x40000000) tmp.add_tag("r");
+  if (section_flags & 0x80000000) tmp.add_tag("w");
+  if (tmp.check_tags({"r", "w", "x"})) return 0x40;
+  if (tmp.check_tags({"r", "x"})) return 0x20;
+  if (tmp.check_tags({"r", "w"})) return 0x04;
+  if (tmp.check_tag("r")) return 0x02;
+  if (tmp.check_tag("x")) return 0x10;
+  return 0x0;
+}
+
+std::vector<std::uint32_t> *base_pe::get_relocations() { return &relocations; }
+
+}  // namespace ld::pe

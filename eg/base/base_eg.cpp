@@ -1,3 +1,8 @@
+// This is an open source non-commercial project. Dear PVS-Studio, please check
+// it.
+
+// PVS-Studio Static Code Analyzer for C, C++ and C#: http://www.viva64.com
+
 #include <cry/crypto.h>
 #include <eg/base/base_eg.h>
 
@@ -141,7 +146,7 @@ build_root::build_root()
   morph_node->set_flag(type_flags::morph_branch);
   node *trash_node = new node(this);
   trash_node->set_flag(type_flags::trash_branch);
-
+  stub_size = 0;
   init_cryptography();
 }
 build_root::~build_root() {
@@ -241,9 +246,7 @@ void build_root::apply_alters(std::vector<uint8_t> *content,
 
 void build_root::apply_user_input(sin::context *ctx) {
   if (ctx->get_form_name().empty()) {
-    node *current =
-        find_node_by_flag<node>(this, type_flags::node_current,
-                                {bypass_flags::self, bypass_flags::childs});
+    node *current = get_current_node<node>(get_build_node());
 
     if (!current->check_flag(type_flags::memory_group))
       throw std::domain_error("Cant`t arrange code outside the group");
@@ -259,14 +262,14 @@ void build_root::apply_user_input(sin::context *ctx) {
   form *current_form = static_cast<form *>(0);
 
   for (auto ch : *(get_morph_node()->get_childs())) {
-    if(std::strcmp(ctx->get_form_name().data(), ch->get_name().data()) == 0) {
+    if (std::strcmp(ctx->get_form_name().data(), ch->get_name().data()) == 0) {
       current_form = node_cast<form>(ch);
       appled = true;
       break;
     }
   }
 
-  if(!appled)
+  if (!appled)
     throw std::domain_error("Invalid form name: " + ctx->get_form_name());
 
   appled = false;
@@ -428,6 +431,7 @@ void build_root::locating() {
     mp->set_shift(current_shift);
     current_shift += mp->get_full_size();
   }
+  stub_size = current_shift - base;
 }
 
 void build_root::translating(std::vector<uint8_t> *stub) {
@@ -469,7 +473,8 @@ void build_root::get_depended_memory(
     if (mp->run_functor(
             [&memory_name, &target](node *n, std::uint64_t ctx) -> bool {
               if (n->check_flag(type_flags::build_memory) &&
-                  (std::strcmp(memory_name.data(), n->get_name().data()) == 0)) {
+                  (std::strcmp(memory_name.data(), n->get_name().data()) ==
+                   0)) {
                 target = node_cast<memory_piece>(n);
                 return true;
               }
@@ -506,7 +511,8 @@ void build_root::get_depended_memory(
                   finally = true;
               } else {
                 mp->set_shift(shift_val);
-                if ((std::strcmp(memory_name.data(), n->get_name().data()) == 0)) {
+                if ((std::strcmp(memory_name.data(), n->get_name().data()) ==
+                     0)) {
                   ok.first = n->get_object_id();
                   ok.second = ctx;
                 }
@@ -539,6 +545,7 @@ void build_root::get_depended_memory(
 }
 
 void build_root::duplicate_guard(std::string current_name) {
+#ifdef NODE_DEBUG
   bool ok = run_functor(
       [&current_name](node *current_node, std::uint64_t ctx) -> bool {
         if (current_node->get_name() == current_name) return true;
@@ -546,6 +553,7 @@ void build_root::duplicate_guard(std::string current_name) {
       },
       {bypass_flags::childs}, global::cs.generate_unique_number("ctx"));
   if (ok) throw std::domain_error("Name: " + current_name + " already exists!");
+#endif
 }
 
 form *build_root::make_form(std::string form_name) {
@@ -570,9 +578,7 @@ void build_root::start_frame(std::string frame_name) {
 }
 
 void build_root::add_var(std::string var_name, std::uint64_t var_size) {
-  node *current_node =
-      find_node_by_flag<node>(get_build_node(), type_flags::node_current,
-                              {bypass_flags::self, bypass_flags::childs});
+  node *current_node = get_current_node<node>(get_build_node());
   if (current_node->check_flag(type_flags::build_frame))
     node_cast<frame>(current_node)->add_var(var_name, var_size);
   else
@@ -582,9 +588,7 @@ void build_root::add_var(std::string var_name, std::uint64_t var_size) {
 }
 
 void build_root::copy_var(std::string var_name, std::string frame_name) {
-  node *current_node =
-      find_node_by_flag<node>(get_build_node(), type_flags::node_current,
-                              {bypass_flags::self, bypass_flags::childs});
+  node *current_node = get_current_node<node>(get_build_node());
   if (current_node->check_flag(type_flags::build_frame))
     node_cast<frame>(current_node)->add_dependence(var_name, frame_name);
   else
@@ -595,9 +599,7 @@ void build_root::copy_var(std::string var_name, std::string frame_name) {
 
 void build_root::start_segment(std::string segment_name) {
   duplicate_guard(segment_name);
-  node *current_node =
-      find_node_by_flag<node>(get_build_node(), type_flags::node_current,
-                              {bypass_flags::self, bypass_flags::childs});
+  node *current_node = get_current_node<node>(get_build_node());
   group *current_group = new group(current_node);
 
   if (current_node->check_flag(type_flags::build_branch))
@@ -615,9 +617,7 @@ void build_root::start_segment(std::string segment_name) {
 
 void build_root::start_top_segment(std::string segment_name) {
   duplicate_guard(segment_name);
-  node *current_node =
-      find_node_by_flag<node>(get_build_node(), type_flags::node_current,
-                              {bypass_flags::self, bypass_flags::childs});
+  node *current_node = get_current_node<node>(get_build_node());
   group *current_group = reinterpret_cast<group *>(0);
   if (!current_node->check_flag(type_flags::build_frame)) {
     current_node = find_node_by_flag<node>(
@@ -654,9 +654,7 @@ void build_root::fix_segment(std::string segment_name) {
 void build_root::add_top_data(std::string data_name,
                               std::vector<uint8_t> *data_content) {
   duplicate_guard(data_name);
-  node *current_node =
-      find_node_by_flag<node>(get_build_node(), type_flags::node_current,
-                              {bypass_flags::self, bypass_flags::childs});
+  node *current_node = get_current_node<node>(get_build_node());
   data_line *current_data = reinterpret_cast<data_line *>(0);
   if (!current_node->check_flag(type_flags::build_frame)) {
     current_node = find_node_by_flag<node>(
@@ -671,9 +669,7 @@ void build_root::add_top_data(std::string data_name,
 void build_root::add_data(std::string data_name,
                           std::vector<uint8_t> *data_content) {
   duplicate_guard(data_name);
-  node *current_node =
-      find_node_by_flag<node>(get_build_node(), type_flags::node_current,
-                              {bypass_flags::self, bypass_flags::childs});
+  node *current_node = get_current_node<node>(get_build_node());
   data_line *current_data = new data_line(current_node);
   if (current_node->check_flag(type_flags::build_frame) ||
       current_node->check_flag(type_flags::build_branch))
@@ -684,9 +680,7 @@ void build_root::add_data(std::string data_name,
 
 void build_root::add_data(std::string data_name, std::uint64_t data_size) {
   duplicate_guard(data_name);
-  node *current_node =
-      find_node_by_flag<node>(get_build_node(), type_flags::node_current,
-                              {bypass_flags::self, bypass_flags::childs});
+  node *current_node = get_current_node<node>(get_build_node());
   data_line *current_data = new data_line(current_node);
   if (current_node->check_flag(type_flags::build_frame) ||
       current_node->check_flag(type_flags::build_branch))
@@ -696,9 +690,8 @@ void build_root::add_data(std::string data_name, std::uint64_t data_size) {
 }
 
 void build_root::add_key(std::string key_name) {
-  node *current_node =
-      find_node_by_flag<node>(get_build_node(), type_flags::node_current,
-                              {bypass_flags::self, bypass_flags::childs});
+  duplicate_guard(key_name);
+  node *current_node = get_current_node<node>(get_build_node());
   dependence_line *dl = new dependence_line(current_node, {key_name});
   if (current_node->check_flag(type_flags::build_frame) ||
       current_node->check_flag(type_flags::build_branch))
@@ -708,6 +701,49 @@ void build_root::add_key(std::string key_name) {
     std::vector<uint8_t> key;
     this->get_key(dl->get_name_by_index(0), &key);
     dl->set_content(&key);
+    dl->set_flag(type_flags::node_cached);
+  });
+}
+
+void build_root::add_address(std::string addr_name, std::string memory_name,
+                             std::uint64_t base) {
+  duplicate_guard(addr_name);
+  node *current_node = get_current_node<node>(get_build_node());
+  dependence_line *dl = new dependence_line(current_node, {memory_name});
+  if (current_node->check_flag(type_flags::build_frame) ||
+      current_node->check_flag(type_flags::build_branch))
+    dl->set_flag(type_flags::memory_top);
+  dl->set_name(addr_name);
+  dl->set_resolver([this, dl, base]() {
+    std::vector<uint8_t> address;
+    if (this->get_state() >= build_states::translating) {
+      std::uint64_t shift = 0;
+      this->get_depended_memory(
+          dl->get_name_by_index(0),
+          [&shift](memory_piece *mp) { shift = mp->get_shift(); },
+          {dependence_flags::shift});
+      shift += base;
+      global::value_to_vector<std::uint64_t>(
+          &address, shift, this->get_value<std::uint32_t>("bitness") / 8);
+      dl->set_flag(type_flags::node_cached);
+    } else
+      address.resize(this->get_value<std::uint32_t>("bitness") / 8);
+    dl->set_content(&address);
+  });
+}
+
+void build_root::add_processed_data(
+    std::string data_name,
+    std::function<void(build_root *, dependence_line *)> processor) {
+  duplicate_guard(data_name);
+  node *current_node = get_current_node<node>(get_build_node());
+  dependence_line *dl = new dependence_line(current_node, {});
+  if (current_node->check_flag(type_flags::build_frame) ||
+      current_node->check_flag(type_flags::build_branch))
+    dl->set_flag(type_flags::memory_top);
+  dl->set_name(data_name);
+  dl->set_resolver([this, dl, processor]() {
+    processor(this, dl);
   });
 }
 
@@ -715,12 +751,27 @@ std::string build_root::to_string() {
   return node_cast<build_branch>(get_build_node())->to_string();
 }
 
-std::uint64_t build_root::get_entry_point() {
+std::uint64_t build_root::get_memory_rva(std::string name) {
   std::uint64_t shift = 0;
-  get_depended_memory("begin",
+  get_depended_memory(name,
                       [&shift](memory_piece *mp) { shift = mp->get_shift(); },
                       {dependence_flags::shift});
   return shift;
+}
+
+std::uint64_t build_root::get_memory_payload_size(std::string memory_name) {
+  std::uint64_t size = 0;
+  get_depended_memory(memory_name,
+                      [&size](memory_piece *mp) { size = mp->get_payload_size(); },
+                      {dependence_flags::shift});
+  return size;
+}
+
+part *build_root::ssd() {
+  dependence_part *p = new dependence_part(get_trash_node());
+  p->set_resolver(
+      [this](part *cp) -> std::uint64_t { return this->stub_size; });
+  return p;
 }
 
 part *build_root::wr(

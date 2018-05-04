@@ -1,3 +1,7 @@
+// This is an open source non-commercial project. Dear PVS-Studio, please check it.
+
+// PVS-Studio Static Code Analyzer for C, C++ and C#: http://www.viva64.com
+
 #include <eg/base/base_eg.h>
 
 namespace eg {
@@ -51,6 +55,9 @@ void group::resize_decorator(std::uint8_t build_code) {
 
 void group::resize(node *root) {
   build_root *br = dynamic_cast<build_root *>(root);
+
+  if(br == reinterpret_cast<build_root*>(0))
+    throw std::domain_error("Invalid root pointer");
 
   if (br->get_state() > self_state) {
     std::uint64_t current_size = 0;
@@ -395,7 +402,7 @@ std::string data_line::to_string() {
      << ": ";
 
   for (auto b : data)
-    ss << std::hex << b;
+    ss << std::hex << std::uint32_t(b);
   ss << "\n";
   return ss.str();
 }
@@ -412,7 +419,6 @@ void dependence_line::prepare() {
       throw std::domain_error("Resolver for dependence line with id: " +
                               std::to_string(get_object_id()) + " is not set!");
     resolver();
-    set_flag(type_flags::node_cached);
   }
 
   build_root *root = find_node_by_flag<build_root>(this, type_flags::build_root,

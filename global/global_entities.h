@@ -102,7 +102,6 @@ public:
     std::random_shuffle(v->begin(), v->end(), [this](int i) -> int {
       return static_cast<std::uint32_t>(this->generate_random_number()) % i;
     });
-  //std::random_shuffle(v->begin(), v->end());
   }
 };
 
@@ -124,6 +123,15 @@ void align(std::uint64_t &size, std::uint64_t &overhead,
            std::uint64_t align_value);
 
 void table_to_byte_array(std::vector<std::uint8_t> *byte_array, std::vector<std::uint32_t> *table);
+
+void wipe_memory(std::vector<std::uint8_t> &mem, std::uint32_t begin, std::uint32_t end);
+
+template <typename T> void value_to_vector(std::vector<std::uint8_t> *bytes, T value, std::uint8_t count) {
+  bytes->clear();
+  std::uint8_t *begin = reinterpret_cast<std::uint8_t *>(&value);
+  std::uint8_t *end = begin + count;
+  bytes->insert(bytes->end(), begin, end);
+}
 
 } // namespace global
 

@@ -55,7 +55,10 @@ class context : public global::flag_container {
   }
 
  public:
-  context() { assembly_name = "default"; }
+  context() {
+    assembly_name = "default";
+    trash_node = reinterpret_cast<node *>(0);
+  }
   template <typename... Args>
   context(node *trash, Args... args) {
     trash_node = trash;
@@ -168,6 +171,7 @@ class build_root : public node,
   std::vector<memory_piece *> build_sequence;
   std::map<std::string, RAsm *> assemblers;
   std::uint64_t base;
+  std::uint64_t stub_size;
   std::map<std::string, std::pair<std::string, bool>> fake_registers;
 
   virtual void init_assemblers() = 0;
@@ -232,7 +236,13 @@ class build_root : public node,
   void add_data(std::string data_name, std::vector<uint8_t> *data_content);
   void add_data(std::string data_name, std::uint64_t data_size);
   void add_key(std::string key_name);
+  void add_address(std::string addr_name, std::string memory_name,
+                   std::uint64_t base);
+  void add_processed_data(
+      std::string addr_name,
+      std::function<void(build_root *, dependence_line *)> processor);
 
+  part *ssd();
   part *wr(part *target_part, std::vector<std::uint64_t> values,
            std::function<std::uint64_t(part_wrapper *p)> current_wrapper);
   part *dd(std::string begin_name, std::string end_name);
@@ -264,7 +274,8 @@ class build_root : public node,
 
   virtual void copy_fundamental() = 0;
 
-  std::uint64_t get_entry_point();
+  std::uint64_t get_memory_rva(std::string memory_name);
+  std::uint64_t get_memory_payload_size(std::string memory_name);
 };
 
 }  // namespace eg

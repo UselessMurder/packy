@@ -3,16 +3,19 @@
 
 #include <global/global_entities.h>
 
+//#define NODE_DEBUG
+#define USE_CACHE
+
 #include <any>
 #include <bitset>
 #include <cstdint>
 #include <functional>
 #include <list>
-#include <unordered_map>
-#include <unordered_set>
 #include <stdexcept>
 #include <string>
 #include <typeinfo>
+#include <unordered_map>
+#include <unordered_set>
 #include <vector>
 
 namespace eg {
@@ -33,7 +36,12 @@ enum class build_states : std::uint8_t {
 };
 
 namespace dependence_flags {
-  enum df : std::uint8_t { content = 0, shift = 1, full_size = 2, payload_size = 3 };
+enum df : std::uint8_t {
+  content = 0,
+  shift = 1,
+  full_size = 2,
+  payload_size = 3
+};
 }
 
 namespace bypass_flags {
@@ -83,29 +91,26 @@ enum nf : std::uint8_t {
 }
 
 namespace crypto_flags {
-enum cf : std::uint8_t {
-  variable_length_key = 0,
-  block_chiper = 1
-};
+enum cf : std::uint8_t { variable_length_key = 0, block_chiper = 1 };
 };
 
 class global_object {
-private:
+ private:
   std::uint64_t global_object_id;
 
-public:
+ public:
   global_object();
   global_object(const global_object &obj);
+  global_object &operator=(global_object &obj);
   virtual ~global_object();
   std::uint64_t get_object_id();
 };
 
-class node : public global_object,
-             public global::flag_container {
-protected:
+class node : public global_object, public global::flag_container {
+ protected:
   node *parent_node;
   std::vector<node *> childs;
-  std::string name;
+  
   node *last_current;
 
   std::unordered_set<std::uint64_t> contexts;
@@ -114,11 +119,13 @@ protected:
   void join_context(std::uint64_t ctx);
   void leave_context(std::uint64_t ctx);
 
-
-public:
+ public:
+  std::string name;
   node(node *parent);
   node(const node &n);
   virtual ~node();
+
+  node &operator=(node &n);
 
   std::vector<node *> *get_childs();
 
@@ -138,112 +145,22 @@ public:
 
   void select_node();
   void unselect_node();
+  node *get_current();
   bool in_context(std::uint64_t ctx);
 };
 
-class loop_guard {
-private:
-  std::unordered_map<std::string, std::unordered_set<std::uint64_t>> loop_storages;
-
-public:
-  loop_guard();
-  virtual ~loop_guard();
-  void join(std::string storage_name, std::uint64_t id);
-  void leave(std::string storage_name, std::uint64_t id);
-};
-
-class key_value_storage {
-private:
-  std::unordered_map<std::string, std::any> values_storage;
-
-public:
-  key_value_storage() {}
-  virtual ~key_value_storage() {}
-  void set_value(std::string key, std::any value) {
-    values_storage[key] = value;
-  }
-  template <typename T> T get_value(std::string key) {
-    if (values_storage.count(key) < 1)
-      throw std::out_of_range("Can`t find value with key: " + key);
-
-    if (values_storage[key].type() != typeid(T))
-      throw std::invalid_argument("Wrong value type with key: " + key);
-
-    return std::any_cast<T>(values_storage[key]);
-  }
-  void remove_value(std::string key) {
-    if (values_storage.count(key) < 1)
-      throw std::out_of_range("Can`t find value with key: " + key);
-    values_storage.erase(key);
-  }
-};
-
-class crypto_alghorithm : public global::flag_container {
-private:
-  std::function<void(std::vector<std::uint8_t> *, std::vector<std::uint8_t> *)>
-      alg;
-  std::function<void(std::vector<std::uint8_t> *,
-                     std::map<std::string, std::uint64_t> *parameters)>
-      key_generator;
-  std::uint64_t align_value;
-
-public:
-  crypto_alghorithm();
-  ~crypto_alghorithm();
-  std::uint64_t get_align();
-  void set_alghorithm(std::function<void(std::vector<std::uint8_t> *, std::vector<std::uint8_t> *)>
-      current_alg);
-  void set_generator(std::function<void(std::vector<std::uint8_t> *,
-                     std::map<std::string, std::uint64_t> *parameters)>
-      current_generator);
-  void set_align(std::uint64_t current_align);
-  void alter(std::vector<std::uint8_t> *data, std::vector<std::uint8_t> *key);
-  void generate_key(std::vector<std::uint8_t> *key,
-                    std::map<std::string, std::uint64_t> *parameters);
-};
-
-class string_container {
-protected:
-  std::vector<std::string> names;
-
-public:
-  string_container(std::vector<std::string> current_names);
-  string_container(const string_container &obj);
-  virtual ~string_container();
-  std::string get_name_by_index(std::uint32_t index);
-};
-
-class recursion_counter {
-private:
-  std::uint64_t r_counter;
-  std::uint64_t r_stack_size;
-  std::list<std::uint64_t> r_stack;
-
-public:
-  recursion_counter();
-  ~recursion_counter();
-  void set_recursion_counter(std::uint64_t counter);
-  std::uint64_t get_recursion_counter();
-  bool is_recursion_counter();
-  void up_recursion_counter();
-  void down_recursion_counter();
-  void store_recursion_counter();
-  void load_recursion_counter();
-};
-
-class printable_object {
-public:
-  printable_object();
-  virtual ~printable_object();
-  virtual std::string to_string() = 0;
-};
-
-template <typename T> T *node_cast(node *n) {
+template <typename T>
+T *node_cast(node *n) {
   T *ptr = dynamic_cast<T *>(n);
   if (ptr == reinterpret_cast<T *>(0))
     throw std::domain_error("Wrong type cast for node with id: " +
                             std::to_string(n->get_object_id()));
   return ptr;
+}
+
+template <typename T>
+T *get_current_node(node *n) {
+  return node_cast<T>(n->get_current());
 }
 
 template <typename T>
@@ -259,15 +176,14 @@ T *find_node_by_name(node *current_node, std::string name,
         return false;
       },
       search_flags, global::cs.generate_unique_number("ctx"));
-  if (!ok)
-    throw std::domain_error("Cant`t find node by name: " + name);
+  if (!ok) throw std::domain_error("Cant`t find node by name: " + name);
 
   return node_cast<T>(n);
 }
 
 template <typename T>
 T *find_node_by_flag(node *current_node, std::uint8_t node_flag,
-                      global::flag_container search_flags) {
+                     global::flag_container search_flags) {
   node *n;
   bool ok = current_node->run_functor(
       [&n, &node_flag](node *current_node, std::uint64_t ctx) -> bool {
@@ -279,7 +195,8 @@ T *find_node_by_flag(node *current_node, std::uint8_t node_flag,
       },
       search_flags, global::cs.generate_unique_number("ctx"));
   if (!ok)
-    throw std::domain_error("Cant`t find node by flag: " + std::to_string(node_flag));
+    throw std::domain_error("Cant`t find node by flag: " +
+                            std::to_string(node_flag));
 
   return node_cast<T>(n);
 }
@@ -298,11 +215,130 @@ T *find_node_by_flags(node *current_node, global::flag_container node_flags,
       },
       search_flags, global::cs.generate_unique_number("ctx"));
   if (!ok)
-    throw std::domain_error("Cant`t find node by flags: " + node_flags.flags_to_string());
+    throw std::domain_error("Cant`t find node by flags: " +
+                            node_flags.flags_to_string());
 
   return node_cast<T>(n);
 }
 
-} // namespace eg
+class current_cache {
+ private:
+  std::uint64_t list_size;
+  std::list<node *> currents;
+
+ public:
+  current_cache();
+  ~current_cache();
+  void append_current(node *new_current);
+  void remove_current();
+  node *get_current();
+};
+
+#ifdef USE_CACHE
+extern current_cache global_cache;
+#endif
+
+class loop_guard {
+ private:
+  std::unordered_map<std::string, std::unordered_set<std::uint64_t>>
+      loop_storages;
+
+ public:
+  loop_guard();
+  virtual ~loop_guard();
+  void join(std::string storage_name, std::uint64_t id);
+  void leave(std::string storage_name, std::uint64_t id);
+};
+
+class key_value_storage {
+ private:
+  std::unordered_map<std::string, std::any> values_storage;
+
+ public:
+  key_value_storage() {}
+  virtual ~key_value_storage() {}
+  void set_value(std::string key, std::any value) {
+    values_storage[key] = value;
+  }
+  template <typename T>
+  T get_value(std::string key) {
+    if (values_storage.count(key) < 1)
+      throw std::out_of_range("Can`t find value with key: " + key);
+
+    if (values_storage[key].type() != typeid(T))
+      throw std::invalid_argument("Wrong value type with key: " + key);
+
+    return std::any_cast<T>(values_storage[key]);
+  }
+  void remove_value(std::string key) {
+    if (values_storage.count(key) < 1)
+      throw std::out_of_range("Can`t find value with key: " + key);
+    values_storage.erase(key);
+  }
+};
+
+class crypto_alghorithm : public global::flag_container {
+ private:
+  std::function<void(std::vector<std::uint8_t> *, std::vector<std::uint8_t> *)>
+      alg;
+  std::function<void(std::vector<std::uint8_t> *,
+                     std::map<std::string, std::uint64_t> *parameters)>
+      key_generator;
+  std::uint64_t align_value;
+
+ public:
+  crypto_alghorithm();
+  ~crypto_alghorithm();
+  std::uint64_t get_align();
+  void set_alghorithm(std::function<void(std::vector<std::uint8_t> *,
+                                         std::vector<std::uint8_t> *)>
+                          current_alg);
+  void set_generator(
+      std::function<void(std::vector<std::uint8_t> *,
+                         std::map<std::string, std::uint64_t> *parameters)>
+          current_generator);
+  void set_align(std::uint64_t current_align);
+  void alter(std::vector<std::uint8_t> *data, std::vector<std::uint8_t> *key);
+  void generate_key(std::vector<std::uint8_t> *key,
+                    std::map<std::string, std::uint64_t> *parameters);
+};
+
+class string_container {
+ protected:
+  std::vector<std::string> names;
+
+ public:
+  string_container(std::vector<std::string> current_names);
+  string_container(const string_container &obj);
+  virtual ~string_container();
+  std::string get_name_by_index(std::uint32_t index);
+};
+
+class recursion_counter {
+ private:
+  std::uint64_t r_counter;
+  std::uint64_t r_stack_size;
+  std::list<std::uint64_t> r_stack;
+
+ public:
+  recursion_counter();
+  ~recursion_counter();
+  void set_recursion_counter(std::uint64_t counter);
+  std::uint64_t get_recursion_counter();
+  bool is_recursion_counter();
+  void up_recursion_counter();
+  void down_recursion_counter();
+  void store_recursion_counter();
+  void load_recursion_counter();
+};
+
+class printable_object {
+ public:
+  printable_object();
+  virtual ~printable_object();
+  virtual std::string to_string() = 0;
+};
+
+}  // namespace eg
 
 #endif

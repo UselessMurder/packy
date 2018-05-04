@@ -1,3 +1,7 @@
+// This is an open source non-commercial project. Dear PVS-Studio, please check it.
+
+// PVS-Studio Static Code Analyzer for C, C++ and C#: http://www.viva64.com
+
 #include <eg/base/base_eg.h>
 
 namespace eg {
@@ -105,9 +109,8 @@ bool invariant::try_execute(global::flag_container fl,
       vars[v.first]->set_flag(type_flags::will_balanced);
   }
 
-  node *current =
-      find_node_by_flag<node>(root->get_build_node(), type_flags::node_current,
-                              {bypass_flags::self, bypass_flags::childs});
+  node *current = get_current_node<node>(root->get_build_node());
+
 
   if (!current->check_flag(type_flags::memory_group))
     throw std::domain_error("Instruction can be located only in group");

@@ -7,11 +7,11 @@
 
 namespace mk {
 class base_mk {
-protected:
+ protected:
   fs::out_file *file;
   ld::base_ld *loader;
 
-public:
+ public:
   base_mk();
   base_mk(fs::out_file *out_file);
   virtual ~base_mk();
@@ -23,6 +23,6 @@ public:
   virtual bool ok_loader(ld::loader_types current_loader) = 0;
   virtual void make() = 0;
 };
-} // namespace mk
+}  // namespace mk
 
 #endif

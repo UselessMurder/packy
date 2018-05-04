@@ -11,6 +11,8 @@ class pe32_i686 : public base_mk {
  protected:
   eg::i8086::i686 e;
   lzo_compress cmpr;
+  std::uint32_t tls_rva;
+  std::pair<uint32_t, uint32_t> reloc_directory_params;
   ld::pe::pe32 *get_ld();
   void write_header(std::vector<std::uint8_t> header);
   void write_data(std::vector<std::uint8_t> *data);
@@ -25,12 +27,17 @@ class pe32_i686 : public base_mk {
   void find_library_init_code();
   void load_function_init_code();
   void build_import_stub();
+  void build_mprotect_stub();
+  void build_reloc_stub();
+  void build_tls_stub();
+  void build_reloc_table();
 
   std::uint32_t get_KERNEL32_hash();
   std::uint32_t get_LoadLibrary_hash();
   std::uint32_t get_GetModuleHandle_hash();
   std::uint32_t get_GetProcAddress_hash();
   std::uint32_t get_ExitProcess_hash();
+  std::uint32_t get_VirtualProtect_hash();
 
  public:
   pe32_i686();

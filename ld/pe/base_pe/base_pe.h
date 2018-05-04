@@ -1,8 +1,8 @@
 #ifndef BASE_PE_H
 #define BASE_PE_H
 
-#include <ld/base_ld/base_ld.h>
 #include <global/global_entities.h>
+#include <ld/base_ld/base_ld.h>
 
 namespace ld::pe {
 
@@ -120,7 +120,7 @@ struct image_section_header {
   std::uint32_t pointer_to_linenumbers;
   std::uint16_t number_of_relocations;
   std::uint16_t number_of_linenumbers;
-  std::uint32_t charactristics;
+  std::uint32_t characteristics;
 };
 
 struct image_import_descriptor {
@@ -131,6 +131,41 @@ struct image_import_descriptor {
   std::uint32_t first_thunk;
 };
 
+struct image_base_relocation {
+  std::uint32_t virtual_address;
+  std::uint32_t size_of_block;
+};
+
+struct image_tls_directory32 {
+  std::uint32_t start_address_of_raw_data;
+  std::uint32_t end_address_of_raw_data;
+  std::uint32_t address_of_index;
+  std::uint32_t address_of_call_backs;
+  std::uint32_t size_of_zero_fill;
+  std::uint32_t characteristics;
+};
+
+struct image_resource_directory {
+  std::uint32_t characteristics;
+  std::uint32_t time_data_stamp;
+  std::uint16_t major_version;
+  std::uint16_t minor_version;
+  std::uint16_t number_of_named_entries;
+  std::uint16_t number_of_id_entries;
+};
+
+struct image_resource_directory_entry {
+  std::uint32_t id;
+  std::uint32_t offset;
+};
+
+struct image_resource_data_entry {
+  std::uint32_t offset_to_data;
+  std::uint32_t size;
+  std::uint32_t code_page;
+  std::uint32_t reserved;
+};
+
 struct library {
   std::vector<std::uint8_t> name;
   std::uint32_t iat_begin;
@@ -138,13 +173,14 @@ struct library {
 };
 
 class base_pe : public base_ld {
-protected:
+ protected:
   std::uint64_t dos_header;
   std::uint64_t dos_stub;
   std::uint64_t nt_signature;
   std::uint64_t file_header;
   std::vector<std::uint64_t> section_headers;
   std::vector<library> import;
+  std::vector<std::uint32_t> relocations;
 
   bool read_dos_header_from_file();
   bool read_dos_stub_from_file();
@@ -154,12 +190,18 @@ protected:
   virtual void continue_parsing() = 0;
 
   void read_section_headers_from_file(std::uint64_t shift);
-  void read_sections_from_file(std::uint64_t shift, std::uint32_t align, std::uint32_t sections_begin);
+  void read_sections_from_file(std::uint64_t shift, std::uint32_t align,
+                               std::uint32_t sections_begin);
   void parse_import(image_data_directory *directories);
 
   virtual void read_thuncks(
       std::uint32_t begin,
       std::vector<std::pair<std::vector<uint8_t>, bool>> &functions) = 0;
+
+  void parse_relocations(image_data_directory *directories);
+
+  virtual void wipe_thuncks(std::uint32_t begin) = 0;
+  void wipe_symbols(std::uint32_t begin);
 
   bool is_valid_mz();
   bool is_valid_pe();
@@ -171,10 +213,13 @@ protected:
 
   std::uint64_t rva_to_file_position(std::uint32_t rva);
   bool search_rva_in_sections(std::uint32_t rva, std::uint32_t &index);
+  void read_unicode_string_from_image(std::uint32_t rva, std::vector<uint8_t> &string);
   void read_ascii_string_from_image(std::uint32_t rva,
                                     std::vector<uint8_t> &string);
+  void wipe_unicode_string(std::uint32_t rva);
+  void wipe_ascii_string(std::uint32_t rva);
 
-public:
+ public:
   base_pe();
   base_pe(fs::in_file *in_file);
   virtual ~base_pe();
@@ -182,16 +227,22 @@ public:
   image_dos_header *get_dos_header();
   image_file_header *get_file_header();
   image_section_header *get_section_header(std::uint64_t index);
+  std::uint32_t section_flags_to_memory_flags(std::uint32_t section_flags);
+  std::uint64_t get_sections_count();
   image_import_descriptor *get_import_descriptor(std::uint32_t rva);
+  image_base_relocation *get_base_relocation(std::uint32_t rva);
   virtual void resize_with_file_align(std::vector<uint8_t> *data) = 0;
   virtual void resize_with_section_align(std::vector<uint8_t> *data) = 0;
-  virtual std::vector<uint8_t>
-  get_rebuilded_header(std::uint32_t stub_size, std::uint32_t code_begin) = 0;
+  virtual std::vector<uint8_t> get_rebuilded_header(
+      std::uint32_t stub_size, std::uint32_t code_begin, std::uint32_t tls_rva,
+      std::pair<std::uint32_t, std::uint32_t> reloc_directory) = 0;
   virtual std::vector<uint8_t> get_protected_data() = 0;
   virtual std::uint64_t get_real_image_begin() = 0;
   virtual std::uint64_t get_begin_of_stub() = 0;
   std::vector<library> *get_import();
+  std::vector<std::uint32_t> *get_relocations();
+  virtual bool is_tls_exists() = 0;
 };
-} // namespace ld::pe
+}  // namespace ld::pe
 
 #endif

@@ -1,5 +1,9 @@
-#include <global/global_entities.h>
+// This is an open source non-commercial project. Dear PVS-Studio, please check
+// it.
 
+// PVS-Studio Static Code Analyzer for C, C++ and C#: http://www.viva64.com
+
+#include <global/global_entities.h>
 #include <bitset>
 #include <chrono>
 #include <cstdint>
@@ -209,9 +213,7 @@ void flag_container::reset_flags(
   clear_flags();
   for (auto f : current_flags) set_flag(f);
 }
-void flag_container::clear_flags() {
-  flag_storage = flag_storage ^ flag_storage;
-}
+void flag_container::clear_flags() { flag_storage = 0; }
 
 bool flag_container::is_same(flag_container &current_flag_container) {
   if (flag_storage == current_flag_container.flag_storage) return true;
@@ -263,6 +265,17 @@ void table_to_byte_array(std::vector<std::uint8_t> *byte_array,
     tmp.value = row;
     for (std::uint8_t i = 0; i < 4; i++) byte_array->push_back(tmp.bytes[i]);
   }
+}
+
+void wipe_memory(std::vector<std::uint8_t> &mem, std::uint32_t begin,
+                 std::uint32_t size) {
+  if (begin > begin + size || mem.size() < begin + size) {
+    throw std::domain_error(
+        "Can`t wipe memory with size: " + std::to_string(mem.size()) +
+        "from: " + std::to_string(begin) + "to: " + std::to_string(begin + size));
+  }
+
+  for (std::uint32_t i = begin; i < begin + size; i++) mem[i] = 0;
 }
 
 }  // namespace global

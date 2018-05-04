@@ -1,3 +1,8 @@
+// This is an open source non-commercial project. Dear PVS-Studio, please check
+// it.
+
+// PVS-Studio Static Code Analyzer for C, C++ and C#: http://www.viva64.com
+
 #include <ld/pe/pe32/pe32.h>
 
 namespace ld::pe {
@@ -24,6 +29,14 @@ void pe32::continue_parsing() {
     throw std::domain_error(
         "Size of image is more than size of image declared in header");
   parse_import(get_optional_header()->data_directory);
+  parse_relocations(get_optional_header()->data_directory);
+  if (is_tls_exists()) {
+    std::uint32_t tls_begin = get_tls_rva();
+    std::remove(relocations.begin(), relocations.end(), tls_begin);
+    std::remove(relocations.begin(), relocations.end(), tls_begin + 4);
+    std::remove(relocations.begin(), relocations.end(), tls_begin + 8);
+    std::remove(relocations.begin(), relocations.end(), tls_begin + 12);
+  }
 }
 
 machine_types pe32::get_machine_type() {
@@ -89,6 +102,23 @@ void pe32::read_thuncks(
   }
 }
 
+void pe32::wipe_thuncks(std::uint32_t begin) {
+  std::vector<std::uint32_t> thuncks;
+  for (std::uint32_t i = begin; true; i += 4) {
+    if (i + 4 >= image.size())
+      throw std::domain_error("thuncks size is more than file size");
+    if (*((std::uint32_t *)&image[i]) == 0) break;
+    thuncks.push_back(*((std::uint32_t *)&image[i]));
+    global::wipe_memory(image, i, 4);
+  }
+  for (auto th : thuncks) {
+    if (!(th & 0x80000000)) {
+      wipe_ascii_string(th + 2);
+      global::wipe_memory(image, th, 2);
+    }
+  }
+}
+
 bool pe32::is_valid_nt_magic() {
   std::uint8_t nt_magic[2] = {0x0B, 0x01};
   for (std::uint8_t i = 0; i < 2; i++) {
@@ -97,24 +127,9 @@ bool pe32::is_valid_nt_magic() {
   return true;
 }
 
-void pe32::print_something() {
-  std::uint32_t count = 0;
-  for (std::uint32_t i = 0; i < import.size(); i++) {
-    printf("%s\n", &import[i].name[0]);
-    for (std::uint32_t j = 0; j < import[i].functions.size(); j++) {
-      if (import[i].functions[j].second) {
-        printf("   %d\n", *((std::uint32_t *)&import[i].functions[j].first[0]));
-      } else {
-        printf("   %s\n", &import[i].functions[j].first[0]);
-      }
-      count++;
-    }
-  }
-  printf("count: %d\n", count);
-}
-
-std::vector<uint8_t> pe32::get_rebuilded_header(std::uint32_t stub_size,
-                                                std::uint32_t code_begin) {
+std::vector<uint8_t> pe32::get_rebuilded_header(
+    std::uint32_t stub_size, std::uint32_t code_begin, std::uint32_t tls_rva,
+    std::pair<std::uint32_t, std::uint32_t> reloc_directory) {
   std::vector<uint8_t> new_header(
       image.begin(), image.begin() + get_optional_header()->size_of_headers);
   image_optional_header32 *header =
@@ -130,7 +145,12 @@ std::vector<uint8_t> pe32::get_rebuilded_header(std::uint32_t stub_size,
       image.size() - get_section_header(0)->virtual_address;
   header->address_of_entry_point = code_begin;
 
-  header->dll_characteristics = header->dll_characteristics & ~0x0040;
+  header->data_directory[9].virtual_address = tls_rva;
+  header->data_directory[9].size = sizeof(image_tls_directory32);
+  header->data_directory[5].virtual_address = reloc_directory.first;
+  header->data_directory[5].size = reloc_directory.second;
+
+  // header->dll_characteristics = header->dll_characteristics & ~0x0040;
 
   std::uint64_t size = image.size();
   std::uint64_t overhead = 0;
@@ -163,11 +183,10 @@ void pe32::make_first_section_header(std::vector<std::uint8_t> &header) {
 
   section_header->misc = static_cast<std::uint32_t>(size + overhead);
   section_header->virtual_address = get_section_header(0)->virtual_address;
-  section_header->charactristics |= 20;
-  section_header->charactristics |= 80;
-  section_header->charactristics |= 0x20000000;
-  section_header->charactristics |= 0x40000000;
-  section_header->charactristics |= 0x80000000;
+  section_header->characteristics |= 20;
+  section_header->characteristics |= 80;
+  section_header->characteristics |= 0x40000000;
+  section_header->characteristics |= 0x80000000;
 }
 
 void pe32::make_second_section_header(std::vector<uint8_t> &header,
@@ -191,11 +210,11 @@ void pe32::make_second_section_header(std::vector<uint8_t> &header,
   section_header->size_of_raw_data =
       static_cast<std::uint32_t>(t_size + overhead);
   section_header->pointer_to_raw_data = get_optional_header()->size_of_headers;
-  section_header->charactristics |= 20;
-  section_header->charactristics |= 40;
-  section_header->charactristics |= 0x20000000;
-  section_header->charactristics |= 0x40000000;
-  section_header->charactristics |= 0x80000000;
+  section_header->characteristics |= 20;
+  section_header->characteristics |= 40;
+  section_header->characteristics |= 0x20000000;
+  section_header->characteristics |= 0x40000000;
+  section_header->characteristics |= 0x80000000;
 }
 
 std::vector<uint8_t> pe32::get_protected_data() {
@@ -239,6 +258,47 @@ void pe32::resize_with_section_align(std::vector<uint8_t> *data) {
   std::uint64_t overhead = 0;
   global::align(size, overhead, get_optional_header()->section_alignment);
   if ((size + overhead) != data->size()) data->resize(size + overhead);
+}
+
+bool pe32::is_tls_exists() {
+  if (get_optional_header()->data_directory[9].virtual_address == 0 ||
+      get_optional_header()->data_directory[9].size == 0)
+    return false;
+  return true;
+}
+
+image_tls_directory32 *pe32::get_tls_directory() {
+  if (!is_tls_exists()) throw std::domain_error("TLS directory is not exists!");
+
+  return (
+      image_tls_directory32
+          *)&image[get_optional_header()->data_directory[9].virtual_address];
+}
+
+std::uint32_t pe32::get_tls_rva() {
+  return get_optional_header()->data_directory[9].virtual_address;
+}
+
+void pe32::wipe_tls_directory() {
+  if (!is_tls_exists()) throw std::domain_error("TLS directory is not exists!");
+
+  std::uint32_t size = get_tls_directory()->end_address_of_raw_data -
+                       get_tls_directory()->start_address_of_raw_data;
+  std::uint32_t begin = get_tls_directory()->start_address_of_raw_data -
+                        get_optional_header()->image_base;
+
+  global::wipe_memory(image, begin, size + 1);
+
+  global::wipe_memory(image,
+                      get_optional_header()->data_directory[9].virtual_address,
+                      sizeof(image_tls_directory32));
+}
+
+void pe32::get_part_of_image(std::vector<uint8_t> *part, std::uint32_t rva,
+                             std::uint32_t size) {
+  if (rva + size > image.size()) throw std::domain_error("Extra size part!");
+  std::copy(image.begin() + rva, image.begin() + rva + size,
+            std::back_inserter((*part)));
 }
 
 }  // namespace ld::pe

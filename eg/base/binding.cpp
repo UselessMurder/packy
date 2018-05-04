@@ -1,3 +1,8 @@
+// This is an open source non-commercial project. Dear PVS-Studio, please check
+// it.
+
+// PVS-Studio Static Code Analyzer for C, C++ and C#: http://www.viva64.com
+
 #include <eg/base/base_eg.h>
 #include <global/global_entities.h>
 #include <algorithm>
@@ -7,12 +12,19 @@
 
 namespace eg {
 
+current_cache global_cache;
+
 global_object::global_object() {
   global_object_id = global::cs.generate_unique_number("gobj");
 }
 
 global_object::global_object(const global_object &obj) {
   global_object_id = global::cs.generate_unique_number("gobj");
+}
+
+global_object &global_object::operator=(global_object &obj) {
+  this->global_object_id = global::cs.generate_unique_number("gobj");
+  return *this;
 }
 
 global_object::~global_object() {}
@@ -33,6 +45,14 @@ node::node(const node &n) : global_object(n), global::flag_container(n) {
   parent_node = reinterpret_cast<node *>(0);
   last_current = reinterpret_cast<node *>(0);
   name = n.name;
+}
+
+node &node::operator=(node &n) {
+  global_object::operator=(n);
+  this->parent_node = reinterpret_cast<node *>(0);
+  this->last_current = reinterpret_cast<node *>(0);
+  this->name = n.name;
+  return *this;
 }
 
 void node::join_context(std::uint64_t ctx) { contexts.insert(ctx); }
@@ -85,17 +105,13 @@ void node::free_node(node *child_node) {
                               std::to_string(child_node->get_object_id()));
 }
 
-std::vector<node *> *node::get_childs() {
-  return &childs;
-}
+std::vector<node *> *node::get_childs() { return &childs; }
 
 bool node::run_functor(std::function<bool(node *, std::uint64_t)> functor,
                        global::flag_container flags, std::uint64_t ctx) {
   if (flags.check_flag(bypass_flags::self)) {
     if (functor(this, ctx)) return true;
   }
-
-  global::named_defer recall_defer;
 
   join_context(ctx);
   DEFER(this->leave_context(ctx););
@@ -129,6 +145,9 @@ bool node::run_functor(std::function<bool(node *, std::uint64_t)> functor,
 }
 
 void node::select_node() {
+#ifdef USE_CACHE
+  global_cache.append_current(this);
+#else
   if (check_flag(type_flags::node_current))
     throw std::domain_error(
         "Cant`t select node, because node already selected");
@@ -150,9 +169,13 @@ void node::select_node() {
     last_current = target;
   }
   set_flag(type_flags::node_current);
+#endif
 }
 
 void node::unselect_node() {
+#ifdef USE_CACHE
+  global_cache.remove_current();
+#else
   node *target = 0;
 
   bool p = run_functor(
@@ -172,6 +195,16 @@ void node::unselect_node() {
   target->unset_flag(type_flags::node_current);
   if (target->last_current != reinterpret_cast<node *>(0))
     target->last_current->set_flag(type_flags::node_current);
+#endif
+}
+
+node *node::get_current() {
+#ifdef USE_CACHE
+  return global_cache.get_current();
+#else
+  return find_node_by_flag<node>(this, type_flags::node_current,
+                                 {bypass_flags::self, bypass_flags::childs});
+#endif
 }
 
 loop_guard::loop_guard() {}
@@ -292,5 +325,26 @@ void recursion_counter::load_recursion_counter() {
 
 printable_object::printable_object() {}
 printable_object::~printable_object() {}
+
+current_cache::current_cache() { list_size = 0; }
+current_cache::~current_cache() {}
+void current_cache::append_current(node *new_current) {
+  if (list_size != 0) currents.back()->unset_flag(type_flags::node_current);
+  new_current->set_flag(type_flags::node_current);
+  currents.push_back(new_current);
+  list_size++;
+}
+void current_cache::remove_current() {
+  if (list_size == 0) throw std::domain_error("Current cache is empty!");
+  currents.back()->unset_flag(type_flags::node_current);
+  currents.pop_back();
+  list_size--;
+  if (list_size != 0) currents.back()->set_flag(type_flags::node_current);
+}
+
+node *current_cache::get_current() {
+  if (list_size == 0) throw std::domain_error("Current cache is empty!");
+  return currents.back();
+}
 
 }  // namespace eg

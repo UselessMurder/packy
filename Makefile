@@ -58,7 +58,11 @@ OBJECTS += objfiles/i686.o
 all:  $(APP)
 
 clean: 
-	rm -rf $(APP) objfiles/*.o
+	rm -rf $(APP) objfiles/*.o strace_out tasks
+
+check:
+	pvs-studio-analyzer analyze -o strace_out	;\
+	plog-converter -a GA:1,2 -t tasklist -o tasks strace_out
 
 objfiles/main.o: main.cpp
 	$(COMPILER) -c -o objfiles/main.o main.cpp $(CPPFLAGS) 
