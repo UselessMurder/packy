@@ -124,7 +124,7 @@ void align(std::uint64_t &size, std::uint64_t &overhead,
 
 void table_to_byte_array(std::vector<std::uint8_t> *byte_array, std::vector<std::uint32_t> *table);
 
-void wipe_memory(std::vector<std::uint8_t> &mem, std::uint32_t begin, std::uint32_t end);
+void wipe_memory(std::vector<std::uint8_t> *mem, std::uint32_t begin, std::uint32_t end);
 
 template <typename T> void value_to_vector(std::vector<std::uint8_t> *bytes, T value, std::uint8_t count) {
   bytes->clear();

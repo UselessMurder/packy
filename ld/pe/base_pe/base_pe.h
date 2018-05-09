@@ -35,7 +35,7 @@ struct image_file_header {
   std::uint32_t pointer_to_symbol_table;
   std::uint32_t number_of_symbols;
   std::uint16_t size_of_optional_header;
-  std::uint16_t charactristics;
+  std::uint16_t characteristics;
 };
 
 struct image_data_directory {
@@ -166,10 +166,53 @@ struct image_resource_data_entry {
   std::uint32_t reserved;
 };
 
+struct image_export_directory {
+  std::uint32_t characteristics;
+  std::uint32_t time_data_stamp;
+  std::uint16_t major_version;
+  std::uint16_t minor_version;
+  std::uint32_t name;
+  std::uint32_t base;
+  std::uint32_t number_of_functions;
+  std::uint32_t number_of_names;
+  std::uint32_t address_of_functions;
+  std::uint32_t address_of_names;
+  std::uint32_t address_of_name_ordinals;
+};
+
+struct resource_entry {
+  image_resource_directory_entry entry;
+  bool str, dir;
+  std::vector<uint8_t> self_id;
+  std::uint64_t child_id;
+};
+
+struct resource_diretory {
+  image_resource_directory dir;
+  std::vector<resource_entry> entries;
+};
+
+struct resource_data {
+  image_resource_data_entry data_entry;
+  std::vector<uint8_t> data;
+};
+
+struct resource_container {
+  std::uint64_t root_id;
+  std::map<uint64_t, resource_diretory> directories;
+  std::map<uint64_t, resource_data> resources;
+};
+
 struct library {
   std::vector<std::uint8_t> name;
   std::uint32_t iat_begin;
   std::vector<std::pair<std::vector<std::uint8_t>, bool>> functions;
+};
+
+struct export_container {
+  std::vector<uint8_t> image_name;
+  std::vector<std::pair<std::vector<uint8_t>, uint16_t>> names;
+  std::vector<std::pair<std::vector<uint8_t>, bool>> addresses;
 };
 
 class base_pe : public base_ld {
@@ -181,6 +224,8 @@ class base_pe : public base_ld {
   std::vector<std::uint64_t> section_headers;
   std::vector<library> import;
   std::vector<std::uint32_t> relocations;
+  resource_container resources;
+  export_container exports;
 
   bool read_dos_header_from_file();
   bool read_dos_stub_from_file();
@@ -199,9 +244,12 @@ class base_pe : public base_ld {
       std::vector<std::pair<std::vector<uint8_t>, bool>> &functions) = 0;
 
   void parse_relocations(image_data_directory *directories);
+  void parse_resources();
+  void parse_next_resource_level(std::uint32_t depth, std::uint32_t rva,
+                                 std::uint64_t id);
+  void parse_exports(image_data_directory *directories);
 
   virtual void wipe_thuncks(std::uint32_t begin) = 0;
-  void wipe_symbols(std::uint32_t begin);
 
   bool is_valid_mz();
   bool is_valid_pe();
@@ -213,11 +261,6 @@ class base_pe : public base_ld {
 
   std::uint64_t rva_to_file_position(std::uint32_t rva);
   bool search_rva_in_sections(std::uint32_t rva, std::uint32_t &index);
-  void read_unicode_string_from_image(std::uint32_t rva, std::vector<uint8_t> &string);
-  void read_ascii_string_from_image(std::uint32_t rva,
-                                    std::vector<uint8_t> &string);
-  void wipe_unicode_string(std::uint32_t rva);
-  void wipe_ascii_string(std::uint32_t rva);
 
  public:
   base_pe();
@@ -231,17 +274,42 @@ class base_pe : public base_ld {
   std::uint64_t get_sections_count();
   image_import_descriptor *get_import_descriptor(std::uint32_t rva);
   image_base_relocation *get_base_relocation(std::uint32_t rva);
+  image_resource_directory *get_resource_directory(std::uint32_t rva);
+  image_resource_data_entry *get_resource_data_entry(std::uint32_t rva);
+  image_resource_directory_entry *get_resource_directory_entry(
+      std::uint32_t rva);
+  image_export_directory *get_export_directory(std::uint32_t rva);
+  virtual std::uint32_t get_resource_rva() = 0;
+  virtual std::uint32_t get_resource_size() = 0;
   virtual void resize_with_file_align(std::vector<uint8_t> *data) = 0;
   virtual void resize_with_section_align(std::vector<uint8_t> *data) = 0;
   virtual std::vector<uint8_t> get_rebuilded_header(
       std::uint32_t stub_size, std::uint32_t code_begin, std::uint32_t tls_rva,
-      std::pair<std::uint32_t, std::uint32_t> reloc_directory) = 0;
+      std::pair<std::uint32_t, std::uint32_t> reloc_directory,
+      std::pair<std::uint32_t, std::uint32_t> resource_directory,
+      std::uint32_t export_rva) = 0;
   virtual std::vector<uint8_t> get_protected_data() = 0;
+  virtual std::vector<uint8_t> *get_image() = 0;
   virtual std::uint64_t get_real_image_begin() = 0;
   virtual std::uint64_t get_begin_of_stub() = 0;
   std::vector<library> *get_import();
+  resource_container *get_resources();
   std::vector<std::uint32_t> *get_relocations();
+  export_container *get_export();
   virtual bool is_tls_exists() = 0;
+  virtual bool is_resources_exists() = 0;
+  virtual bool is_reloc_exists() = 0;
+  virtual bool is_exports_exists() = 0;
+  virtual bool is_nx_compatible() = 0;
+  bool is_dll();
+  void read_unicode_string_from_image(std::uint32_t rva,
+                                      std::vector<uint8_t> &string);
+  void read_ascii_string_from_image(std::uint32_t rva,
+                                    std::vector<uint8_t> &string);
+  void wipe_unicode_string(std::uint32_t rva);
+  void wipe_ascii_string(std::uint32_t rva);
+  virtual void get_part_of_image(std::vector<uint8_t> *part, std::uint32_t rva,
+                                 std::uint32_t size) = 0;
 };
 }  // namespace ld::pe
 

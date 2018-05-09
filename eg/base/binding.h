@@ -86,7 +86,8 @@ enum nf : std::uint8_t {
   fundomental_undepended = 29,
   debug_unprotected = 30,
   will_balanced = 31,
-  do_not_use_shift = 32
+  do_not_use_shift = 32,
+  shift_is_set = 33
 };
 }
 

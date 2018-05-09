@@ -1435,7 +1435,7 @@ void i686::init_invariants() {
       EG->bs(reg_, "common"); EG->f(fl, "push_rd", EG->g(reg_));
       EG->bss(ebp_, ebp); EG->f(fl, "abs_r", EG->g(reg_), VARS["a2"]);
       EG->f(fl, "mov_smd_rd", EG->g(ebp_), "-", VARS["a1"], EG->g(reg_));
-      EG->f(fl, "pop_rd", EG->g(reg_)); EG->fr(ebp_););
+      EG->f(fl, "pop_rd", EG->g(reg_)); EG->fr(reg_); EG->fr(ebp_););
   // store_abs
 
   // store_rd begin
@@ -1722,6 +1722,14 @@ void i686::init_invariants() {
 
   // clear end
 
+  // pusha begin
+  cf = make_form("pushad");
+
+  iv = make_invariant(cf);
+  iv->copy_flags(gg({"st", "ss", "fs", "up", "fu"}));
+  iv->PROGRAMMER(EG->t(CAST, "pushad"););
+  // pusha end
+
   // push begin
 
   // push_rd begin
@@ -1776,6 +1784,14 @@ void i686::init_invariants() {
   // push_vd end
 
   // push end
+
+  //popa begin
+  cf = make_form("popad");
+
+  iv = make_invariant(cf);
+  iv->copy_flags(gg({"st", "ss", "fs", "up", "fu"}));
+  iv->PROGRAMMER(EG->t(CAST, "popa"););
+  //popa begin
 
   // pop begin
 
@@ -2196,6 +2212,13 @@ void i686::init_invariants() {
   iv = make_invariant(cf);
   iv->copy_flags(gg({"st", "ss", "fs", "up", "fu"}));
   iv->PROGRAMMER(EG->t(CAST, "ret"););
+
+  cf = make_form("ret_vw");
+  cf->add_argument("a", 16);
+
+  iv = make_invariant(cf);
+  iv->copy_flags(gg({"st", "ss", "fs", "up", "fu"}));
+  iv->PROGRAMMER(EG->t(CAST, "ret ", VARS["a"]););
   // ret end
 
   // bswap begin

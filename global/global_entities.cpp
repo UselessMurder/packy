@@ -267,15 +267,15 @@ void table_to_byte_array(std::vector<std::uint8_t> *byte_array,
   }
 }
 
-void wipe_memory(std::vector<std::uint8_t> &mem, std::uint32_t begin,
+void wipe_memory(std::vector<std::uint8_t> *mem, std::uint32_t begin,
                  std::uint32_t size) {
-  if (begin > begin + size || mem.size() < begin + size) {
+  if (begin > begin + size || mem->size() < begin + size) {
     throw std::domain_error(
-        "Can`t wipe memory with size: " + std::to_string(mem.size()) +
+        "Can`t wipe memory with size: " + std::to_string(mem->size()) +
         "from: " + std::to_string(begin) + "to: " + std::to_string(begin + size));
   }
 
-  for (std::uint32_t i = begin; i < begin + size; i++) mem[i] = 0;
+  for (std::uint32_t i = begin; i < begin + size; i++) (*mem)[i] = 0;
 }
 
 }  // namespace global

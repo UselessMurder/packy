@@ -7,8 +7,22 @@
 #include <mk/pe32_i686/pe32_i686.h>
 
 namespace mk {
-pe32_i686::pe32_i686() : base_mk() {}
-pe32_i686::pe32_i686(fs::out_file *out_file) : base_mk(out_file) {}
+pe32_i686::pe32_i686() : base_mk() {
+  tls_rva = 0;
+  resource_directory_params.first = 0;
+  resource_directory_params.second = 0;
+  export_rva = 0;
+  reloc_directory_params.first = 0;
+  reloc_directory_params.second = 0;
+}
+pe32_i686::pe32_i686(fs::out_file *out_file) : base_mk(out_file) {
+  tls_rva = 0;
+  resource_directory_params.first = 0;
+  resource_directory_params.second = 0;
+  export_rva = 0;
+  reloc_directory_params.first = 0;
+  reloc_directory_params.second = 0;
+}
 pe32_i686::~pe32_i686() {}
 
 inline ld::pe::pe32 *pe32_i686::get_ld() {
@@ -87,19 +101,30 @@ std::uint32_t pe32_i686::get_VirtualProtect_hash() {
 }
 
 void pe32_i686::end_init_code() {
-  e.start_segment("end");
+  e.enable_alter("way_out", "out_key", "byte_ecb");
+  e.start_segment("way_out");
+  e.bf("accum", "common");
+  e.bf("target", "common");
+  e.f("abs_r", e.g("target"),
+      e.shd("context_storage_" +
+            std::to_string(global::rc.generate_random_number() % 256)));
+  for (uint8_t i = 0; i < 8; i++) {
+    e.f("mov_rd_md", e.g("accum"), e.g("target"));
+    e.f("push_rd", e.g("accum"));
+    e.f("add_rd_vd", e.g("target"), std::uint64_t(4));
+  }
+  e.fr("accum");
+  e.fr("target");
+
   e.grab_group("common");
-  e.bss("ebp_", eg::i8086::ebp);
-  e.bss("esp_", eg::i8086::esp);
-  e.f("mov_rd_rd", e.g("esp_"), e.g("ebp_"));
-  e.f("pop_rd", e.g("ebp_"));
-  e.t("popad");
+  e.f("popad");
+  e.bsp("esp_", eg::i8086::esp);
+  e.f(e.gg({"fu"}), "add_rd_vd", e.g("esp_"), e.frszd());
+  e.fr("esp_");
   e.f(e.gg({"fu"}), "jump",
       std::uint64_t(get_ld()->get_optional_header()->address_of_entry_point));
-  e.end();
   e.free_group("common");
-  e.fr("ebp_");
-  e.fr("esp_");
+  e.end();
 }
 
 void pe32_i686::error_exit_init_code() {
@@ -348,10 +373,21 @@ void pe32_i686::load_function_init_code() {
 
 void pe32_i686::build_import_stub() {
   std::vector<ld::pe::library> *import = get_ld()->get_import();
+  std::uint32_t f_counter = 0;
+  std::uint32_t l_counter = 0;
   e.start_segment("import");
-
-  for (auto lib : *import) {
+  if (import->size() != 0)
+    e.f("jump", e.shd("import_library_" + std::to_string(l_counter)));
+  else
+    e.f("jump", e.shd("reloc"));
+  e.end();
+  std::vector<uint32_t> keys;
+  std::uint32_t counter = 0;
+  for (uint64_t i = 0; i < import->size(); i++) {
+    auto lib = (*import)[i];
     e.bf("iat_base", "common");
+    e.start_segment("import_library_" + std::to_string(l_counter));
+    l_counter++;
     e.f("abs_r", e.g("iat_base"), std::uint64_t(lib.iat_begin));
     auto dll_alias = global::cs.generate_unique_string("il");
     e.add_top_data(dll_alias, &lib.name);
@@ -367,12 +403,23 @@ void pe32_i686::build_import_stub() {
     e.f("invoke", e.shd("find_library"));
     e.f("invoke", e.shd("alter_d"));
     e.pop_registers({e.g("iat_base")});
-
-    for (auto func : lib.functions) {
+    if (lib.functions.size() != 0)
+      e.f("jump", e.shd("import_function_" + std::to_string(f_counter)));
+    else {
+      if (i == (import->size() - 1))
+        e.f("jump", e.shd("reloc"));
+      else
+        e.f("jump", e.shd("import_library_" + std::to_string(l_counter)));
+    }
+    e.end();
+    for (uint64_t j = 0; j < lib.functions.size(); j++) {
+      auto func = lib.functions[j];
       auto function_alias = global::cs.generate_unique_string("if");
       e.add_top_data(function_alias, &func.first);
       e.enable_alter(function_alias, function_alias + "key", "dword_ecb");
       e.bf("tmp", "common");
+      e.start_segment("import_function_" + std::to_string(f_counter));
+      f_counter++;
       e.f("abs_r", e.g("tmp"), e.shd(function_alias));
       e.f("store_rd", e.vshd("target"), e.g("tmp"));
       e.f("store_vd", e.vshd("count"), e.fszd(function_alias));
@@ -385,17 +432,59 @@ void pe32_i686::build_import_stub() {
       e.pop_registers({e.g("iat_base")});
       e.bf("func_addr", "common");
       e.f("load_rd", e.g("func_addr"), e.vshd("func"));
+      if (get_ld()->is_nx_compatible()) {
+        keys.push_back(
+            static_cast<uint32_t>(global::rc.generate_random_number()));
+        e.f("xor_rd_vd", e.g("func_addr"), std::uint64_t(keys.back()));
+        e.bf("storage", "common");
+        e.f("abs_r", e.g("storage"),
+            e.shd("import_storage_" + std::to_string(counter)));
+        e.f("mov_md_rd", e.g("storage"), e.g("func_addr"));
+        e.fr("storage");
+        e.f("abs_r", e.g("func_addr"),
+            e.shd("import_guard_" + std::to_string(counter)));
+        counter++;
+      }
       e.f("mov_md_rd", e.g("iat_base"), e.g("func_addr"));
       e.fr("func_addr");
       e.f("add_rd_vd", e.g("iat_base"), std::uint64_t(4));
+      if (j == (lib.functions.size() - 1)) {
+        if (i == (import->size() - 1))
+          e.f("jump", e.shd("reloc"));
+        else
+          e.f("jump", e.shd("import_library_" + std::to_string(l_counter)));
+      } else
+        e.f("jump", e.shd("import_function_" + std::to_string(f_counter)));
+      e.end();
     }
-
     e.fr("iat_base");
   }
-
-  e.f("jump", e.shd("reloc"));
-  // e.f("jump", e.shd("tls_stub"));
-  e.end();
+  counter = 0;
+  if (get_ld()->is_nx_compatible()) {
+    e.grab_group("common");
+    for (auto key : keys) {
+      e.add_data("import_storage_" + std::to_string(counter), 4);
+      e.start_segment("import_guard_" + std::to_string(counter));
+      e.bs("accum", "common");
+      e.bss("esp_", eg::i8086::esp);
+      e.f(e.gg({"fu"}), "push_rd", e.g("accum"));
+      e.f(e.gg({"fu"}), "push_rd", e.g("accum"));
+      e.f(e.gg({"fu"}), "abs_r", e.g("accum"),
+          e.shd("import_storage_" + std::to_string(counter)));
+      e.f(e.gg({"fu"}), "mov_rd_md", e.g("accum"), e.g("accum"));
+      e.f(e.gg({"fu"}), "xor_rd_vd", e.g("accum"), std::uint64_t(key));
+      e.f(e.gg({"fu", "ss"}), "add_rd_vd", e.g("esp_"), std::uint64_t(8));
+      e.f(e.gg({"fu", "ss"}), "push_rd", e.g("accum"));
+      e.f(e.gg({"fu", "ss"}), "sub_rd_vd", e.g("esp_"), std::uint64_t(4));
+      e.f(e.gg({"fu"}), "pop_rd", e.g("accum"));
+      e.f(e.gg({"fu"}), "ret");
+      e.fr("accum");
+      e.fr("esp_");
+      e.end();
+      counter++;
+    }
+    e.free_group("common");
+  }
 }
 
 void pe32_i686::build_reloc_stub() {
@@ -472,7 +561,7 @@ void pe32_i686::build_tls_stub() {
   e.end();
 
   e.start_segment("first_line");
-  e.t("ret 0xC");
+  e.f(e.gg({"fu"}), "ret_vw", std::uint64_t(0xC));
   e.end();
 
   e.start_segment("tls_stub");
@@ -493,12 +582,15 @@ void pe32_i686::build_tls_stub() {
                       get_ld()->get_optional_header()->image_base));
     e.f("add_rd_vd", e.g("src"), std::uint64_t(4));
     e.f("mov_md_rd", e.g("src"), e.g("data"));
+    e.bsp("_ebp", eg::i8086::ebp);
+    e.f("mov_rd_smd", e.g("dst"), e.g("_ebp"), "-", e.vshd("base"));
+    e.fr("_ebp");
     e.fr("src");
     e.f("jump", e.shd("tls_stub_compare"));
     e.end();
 
     e.start_segment("tls_stub_compare");
-    e.f("test_md_vd", e.g("data"), std::uint64_t(0));
+    e.f("cmp_md_vd", e.g("data"), std::uint64_t(0));
     e.f("branch", "nz", e.shd("tls_stub_loop"), e.shd("tls_stub_end"));
     e.end();
 
@@ -591,25 +683,293 @@ void pe32_i686::build_reloc_table() {
   e.end();
 }
 
+void pe32_i686::walk_resource(std::vector<uint8_t> &fp,
+                              std::vector<uint8_t> &sp, uint64_t id,
+                              std::vector<std::pair<uint32_t, uint64_t>> &dofs,
+                              uint32_t &dof, uint32_t &sof,
+                              ld::pe::resource_container *ct) {
+  std::vector<uint8_t> tmp;
+  ld::pe::resource_diretory &res = ct->directories[id];
+  global::value_to_vector(&tmp, res.dir.characteristics, sizeof(uint32_t));
+  fp.insert(fp.end(), tmp.begin(), tmp.end());
+  global::value_to_vector(&tmp, res.dir.time_data_stamp, sizeof(uint32_t));
+  fp.insert(fp.end(), tmp.begin(), tmp.end());
+  global::value_to_vector(&tmp, res.dir.major_version, sizeof(uint16_t));
+  fp.insert(fp.end(), tmp.begin(), tmp.end());
+  global::value_to_vector(&tmp, res.dir.minor_version, sizeof(uint16_t));
+  fp.insert(fp.end(), tmp.begin(), tmp.end());
+  global::value_to_vector(&tmp, res.dir.number_of_named_entries,
+                          sizeof(uint16_t));
+  fp.insert(fp.end(), tmp.begin(), tmp.end());
+  global::value_to_vector(&tmp, res.dir.number_of_id_entries, sizeof(uint16_t));
+  fp.insert(fp.end(), tmp.begin(), tmp.end());
+  dof += sizeof(ld::pe::image_resource_directory);
+  dof += sizeof(ld::pe::image_resource_directory_entry) * res.entries.size();
+  std::vector<std::vector<uint8_t>> temporary_storage;
+  for (auto et : res.entries) {
+    if (et.str) {
+      global::value_to_vector(&tmp, sof | 2147483648, sizeof(uint32_t));
+      fp.insert(fp.end(), tmp.begin(), tmp.end());
+      sp.insert(sp.end(), et.self_id.begin(), et.self_id.end());
+      sof += et.self_id.size();
+    } else
+      fp.insert(fp.end(), et.self_id.begin(), et.self_id.end());
+    if (et.dir) {
+      temporary_storage.push_back(std::vector<uint8_t>());
+      global::value_to_vector(&tmp, dof | 2147483648, sizeof(uint32_t));
+      fp.insert(fp.end(), tmp.begin(), tmp.end());
+      walk_resource(temporary_storage.back(), sp, et.child_id, dofs, dof, sof,
+                    ct);
+    } else {
+      dofs.back().second = et.child_id;
+      global::value_to_vector(&tmp, dofs.back().first, sizeof(uint32_t));
+      fp.insert(fp.end(), tmp.begin(), tmp.end());
+      dofs.push_back(std::make_pair(
+          dofs.back().first + sizeof(ld::pe::image_resource_data_entry),
+          0xFFFFFFFFFFFFFFFF));
+    }
+  }
+  for (auto st : temporary_storage) fp.insert(fp.end(), st.begin(), st.end());
+}
+
+void pe32_i686::build_resources() {
+  if (get_ld()->is_resources_exists()) {
+    ld::pe::resource_container *ct = get_ld()->get_resources();
+    std::uint32_t data_entries_offset = 0;
+    std::uint32_t strings_offsets = 0;
+    for (auto dir : ct->directories) {
+      std::uint32_t current_offset = 0;
+      current_offset += sizeof(ld::pe::image_resource_directory);
+      current_offset += sizeof(ld::pe::image_resource_directory_entry) *
+                        dir.second.entries.size();
+      strings_offsets += current_offset;
+      data_entries_offset += current_offset;
+      for (auto et : dir.second.entries) {
+        if (et.str) data_entries_offset += et.self_id.size();
+      }
+    }
+    for (auto rs : ct->resources) data_entries_offset += rs.second.data.size();
+    std::vector<std::pair<uint32_t, uint64_t>> offsets;
+    offsets.push_back(std::make_pair(data_entries_offset, 0xFFFFFFFFFFFFFFFF));
+    std::vector<uint8_t> tmp_1;
+    std::vector<uint8_t> tmp_2;
+    uint32_t current_offset = 0;
+    walk_resource(tmp_1, tmp_2, ct->root_id, offsets, current_offset,
+                  strings_offsets, ct);
+    tmp_1.insert(tmp_1.end(), tmp_2.begin(), tmp_2.end());
+    e.start_segment("resource_diretory");
+    e.add_data("resources_dirs", &tmp_1);
+    for (auto of : offsets) {
+      if (of.second == 0xFFFFFFFFFFFFFFFF) break;
+      e.add_data("resource_" + std::to_string(of.second),
+                 (&ct->resources[of.second].data));
+    }
+    e.add_processed_data(
+        "resources_data_entries",
+        [offsets, ct](eg::build_root *root, eg::dependence_line *dl) {
+          std::vector<std::uint8_t> entries;
+          if (root->get_state() >= eg::build_states::translating) {
+            std::vector<uint8_t> tmp;
+            for (auto of : offsets) {
+              if (of.second == 0xFFFFFFFFFFFFFFFF) break;
+              std::uint64_t shift = 0;
+              root->get_depended_memory(
+                  "resource_" + std::to_string(of.second),
+                  [&shift](eg::memory_piece *mp) { shift = mp->get_shift(); },
+                  {eg::dependence_flags::shift});
+              global::value_to_vector(&tmp, static_cast<uint32_t>(shift),
+                                      sizeof(uint32_t));
+              entries.insert(entries.end(), tmp.begin(), tmp.end());
+              global::value_to_vector(&tmp,
+                                      ct->resources[of.second].data_entry.size,
+                                      sizeof(uint32_t));
+              entries.insert(entries.end(), tmp.begin(), tmp.end());
+              global::value_to_vector(
+                  &tmp, ct->resources[of.second].data_entry.code_page,
+                  sizeof(uint32_t));
+              entries.insert(entries.end(), tmp.begin(), tmp.end());
+              global::value_to_vector(
+                  &tmp, ct->resources[of.second].data_entry.reserved,
+                  sizeof(uint32_t));
+              entries.insert(entries.end(), tmp.begin(), tmp.end());
+            }
+            dl->set_flag(eg::type_flags::node_cached);
+          } else
+            entries.resize(offsets.size() *
+                           sizeof(ld::pe::image_resource_data_entry));
+          dl->set_content(&entries);
+        });
+    e.end();
+  }
+}
+
+void pe32_i686::build_export() {
+  if (get_ld()->is_exports_exists()) {
+    e.add_data("export_image_name", &(get_ld()->get_export()->image_name));
+
+    std::uint32_t export_base =
+        get_ld()->get_optional_header()->data_directory[0].virtual_address;
+
+    ld::pe::image_export_directory *ed =
+        get_ld()->get_export_directory(export_base);
+
+    auto exp = get_ld()->get_export();
+
+    e.start_segment("export_directory");
+    e.add_processed_data("export_table", [ed](eg::build_root *root,
+                                              eg::dependence_line *dl) {
+      std::vector<std::uint8_t> table;
+      if (root->get_state() >= eg::build_states::translating) {
+        std::vector<std::uint8_t> tmp;
+        global::value_to_vector(&tmp, ed->characteristics, sizeof(uint32_t));
+        table.insert(table.end(), tmp.begin(), tmp.end());
+        global::value_to_vector(&tmp, ed->time_data_stamp, sizeof(uint32_t));
+        table.insert(table.end(), tmp.begin(), tmp.end());
+        global::value_to_vector(&tmp, ed->major_version, sizeof(uint16_t));
+        table.insert(table.end(), tmp.begin(), tmp.end());
+        global::value_to_vector(&tmp, ed->minor_version, sizeof(uint16_t));
+        table.insert(table.end(), tmp.begin(), tmp.end());
+        std::uint64_t shift = 0;
+        root->get_depended_memory(
+            "export_image_name",
+            [&shift](eg::memory_piece *mp) { shift = mp->get_shift(); },
+            {eg::dependence_flags::shift});
+        global::value_to_vector(&tmp, static_cast<uint32_t>(shift),
+                                sizeof(uint32_t));
+        table.insert(table.end(), tmp.begin(), tmp.end());
+        global::value_to_vector(&tmp, ed->base, sizeof(uint32_t));
+        table.insert(table.end(), tmp.begin(), tmp.end());
+        global::value_to_vector(&tmp, ed->number_of_functions,
+                                sizeof(uint32_t));
+        table.insert(table.end(), tmp.begin(), tmp.end());
+        global::value_to_vector(&tmp, ed->number_of_names, sizeof(uint32_t));
+        table.insert(table.end(), tmp.begin(), tmp.end());
+        root->get_depended_memory(
+            "export_funcs",
+            [&shift](eg::memory_piece *mp) { shift = mp->get_shift(); },
+            {eg::dependence_flags::shift});
+        global::value_to_vector(&tmp, static_cast<uint32_t>(shift),
+                                sizeof(uint32_t));
+        table.insert(table.end(), tmp.begin(), tmp.end());
+        root->get_depended_memory(
+            "export_names",
+            [&shift](eg::memory_piece *mp) { shift = mp->get_shift(); },
+            {eg::dependence_flags::shift});
+        global::value_to_vector(&tmp, static_cast<uint32_t>(shift),
+                                sizeof(uint32_t));
+        table.insert(table.end(), tmp.begin(), tmp.end());
+        root->get_depended_memory(
+            "export_ords",
+            [&shift](eg::memory_piece *mp) { shift = mp->get_shift(); },
+            {eg::dependence_flags::shift});
+        global::value_to_vector(&tmp, static_cast<uint32_t>(shift),
+                                sizeof(uint32_t));
+        table.insert(table.end(), tmp.begin(), tmp.end());
+        dl->set_flag(eg::type_flags::node_cached);
+      } else
+        table.resize(sizeof(ld::pe::image_export_directory));
+      dl->set_content(&table);
+    });
+    std::map<uint64_t, uint32_t> redirects;
+    export_base += sizeof(ld::pe::image_export_directory);
+    std::vector<uint8_t> strings;
+    for (uint64_t i = 0; i < exp->addresses.size(); i++) {
+      std::pair<std::vector<uint8_t>, bool> &current = exp->addresses[i];
+      if (current.second) {
+        redirects[i] = export_base;
+        strings.insert(strings.end(), current.first.begin(),
+                       current.first.end());
+        export_base += current.first.size();
+      }
+    }
+    e.add_data("export_redirects", &strings);
+    e.end();
+
+    e.add_processed_data("export_funcs", [exp, redirects](
+                                             eg::build_root *root,
+                                             eg::dependence_line *dl) mutable {
+      std::vector<std::uint8_t> table;
+      if (root->get_state() >= eg::build_states::translating) {
+        std::vector<std::uint8_t> tmp;
+        std::uint64_t shift = 0;
+        root->get_depended_memory(
+            "export_directory",
+            [&shift](eg::memory_piece *mp) { shift = mp->get_shift(); },
+            {eg::dependence_flags::shift});
+        for (uint64_t i = 0; i < exp->addresses.size(); i++) {
+          std::pair<std::vector<uint8_t>, bool> &current = exp->addresses[i];
+          if (current.second) {
+            global::value_to_vector(&tmp,
+                                    static_cast<uint32_t>(shift + redirects[i]),
+                                    sizeof(uint32_t));
+            table.insert(table.end(), tmp.begin(), tmp.end());
+          } else
+            table.insert(table.end(), current.first.begin(),
+                         current.first.end());
+        }
+        dl->set_flag(eg::type_flags::node_cached);
+      } else
+        table.resize(sizeof(uint32_t) * exp->addresses.size());
+      dl->set_content(&table);
+    });
+
+    strings.clear();
+    std::vector<uint8_t> tmp;
+    for (std::uint32_t i = 0; i < exp->names.size(); i++) {
+      e.add_data("export_name_" + std::to_string(i), &(exp->names[i].first));
+      global::value_to_vector(&tmp, exp->names[i].second, sizeof(uint16_t));
+      strings.insert(strings.end(), tmp.begin(), tmp.end());
+    }
+    e.add_data("export_ords", &strings);
+    e.add_processed_data(
+        "export_names", [exp](eg::build_root *root, eg::dependence_line *dl) {
+          std::vector<std::uint8_t> table;
+          if (root->get_state() >= eg::build_states::translating) {
+            std::vector<std::uint8_t> tmp;
+            for (std::uint32_t i = 0; i < exp->names.size(); i++) {
+              std::uint64_t shift = 0;
+              root->get_depended_memory(
+                  "export_name_" + std::to_string(i),
+                  [&shift](eg::memory_piece *mp) { shift = mp->get_shift(); },
+                  {eg::dependence_flags::shift});
+              global::value_to_vector(&tmp, static_cast<uint32_t>(shift),
+                                      sizeof(uint32_t));
+              table.insert(table.end(), tmp.begin(), tmp.end());
+            }
+            dl->set_flag(eg::type_flags::node_cached);
+          } else
+            table.resize(sizeof(uint32_t) * exp->names.size());
+          dl->set_content(&table);
+        });
+  }
+}
+
 void pe32_i686::build_mprotect_stub() {
   e.start_segment("mprotect");
+  e.f("store_abs", e.vshd("target"), e.shd("way_out"));
+  e.f("store_vd", e.vshd("count"), e.fszd("way_out"));
+  e.f("store_vb", e.vshd("byte_key"), e.kd("out_key", 8, 0));
+  e.f("invoke", e.shd("alter_b"));
+
   e.bsp("eax_", eg::i8086::eax);
   e.bsp("ebp_", eg::i8086::ebp);
   e.bf("trash", "common");
   e.f("lea_rd_smd", e.g("trash"), e.g("ebp_"), "-", e.vshd("trash_ptr"));
-  for (std::uint64_t i = 0; i < get_ld()->get_sections_count(); i++) {
-    e.bf("beg", "common");
-    e.push_registers({e.g("trash")});
-    e.f("push_rd", e.g("trash"));
-    e.f("push_vd", std::uint64_t(get_ld()->section_flags_to_memory_flags(
-                       get_ld()->get_section_header(i)->characteristics)));
-    e.f("push_vd", std::uint64_t(get_ld()->get_section_header(i)->misc));
-    e.f("abs_r", e.g("beg"),
-        std::uint64_t(get_ld()->get_section_header(i)->virtual_address));
-    e.f("push_rd", e.g("beg"));
-    e.f("call_smd", e.g("ebp_"), "-", e.vshd("VirtualProtect"));
-    e.pop_registers({e.g("trash")});
-    e.fr("beg");
+  if (get_ld()->is_nx_compatible()) {
+    for (std::uint64_t i = 0; i < get_ld()->get_sections_count(); i++) {
+      e.bf("beg", "common");
+      e.push_registers({e.g("trash")});
+      e.f("push_rd", e.g("trash"));
+      e.f("push_vd", std::uint64_t(get_ld()->section_flags_to_memory_flags(
+                         get_ld()->get_section_header(i)->characteristics)));
+      e.f("push_vd", std::uint64_t(get_ld()->get_section_header(i)->misc));
+      e.f("abs_r", e.g("beg"),
+          std::uint64_t(get_ld()->get_section_header(i)->virtual_address));
+      e.f("push_rd", e.g("beg"));
+      e.f("call_smd", e.g("ebp_"), "-", e.vshd("VirtualProtect"));
+      e.pop_registers({e.g("trash")});
+      e.fr("beg");
+    }
   }
   e.bf("beg", "common");
   e.f("abs_r", e.g("beg"), get_ld()->get_begin_of_stub());
@@ -624,7 +984,63 @@ void pe32_i686::build_mprotect_stub() {
   e.fr("trash");
   e.fr("ebp_");
   e.fr("eax_");
-  e.f("jump", e.shd("end"));
+  e.f("jump", e.shd("way_out"));
+  e.end();
+}
+
+void pe32_i686::build_context_forks() {
+  for (std::uint32_t i = 0; i < 256; i++)
+    e.add_data("context_storage_" + std::to_string(i), 32);
+
+  e.start_segment("fork_ctx");
+  e.grab_group("common");
+  e.f(e.gg({"fu"}), "pushad");
+  e.free_group("common");
+
+  e.bf("src", "common");
+  e.bsp("esp_", eg::i8086::esp);
+  e.f(e.gg({"fu", "ss"}), "mov_rd_rd", e.g("src"), e.g("esp_"));
+  e.fr("esp_");
+  e.f(e.gg({"fu"}), "jump", e.shd("store_ctx_0"));
+  e.end();
+
+  e.bf("accum", "common");
+  e.bf("dst", "common");
+  e.bf("fork_target", "common");
+
+  e.start_segment("fork_mv_ctx");
+  for (uint32_t i = 0; i < 8; i++) {
+    e.f(e.gg({"fu"}), "mov_rd_md", e.g("accum"), e.g("src"));
+    e.f(e.gg({"fu"}), "mov_md_rd", e.g("dst"), e.g("accum"));
+    if (i != 7) {
+      e.f(e.gg({"fu"}), "sub_rd_vd", e.g("src"), uint64_t(4));
+      e.f(e.gg({"fu"}), "add_rd_vd", e.g("dst"), uint64_t(4));
+    }
+  }
+  e.f(e.gg({"fu"}), "jmp_rd", e.g("fork_target"));
+  e.end();
+
+  for (std::uint32_t i = 0; i < 256; i++) {
+    e.start_segment("store_ctx_" + std::to_string(i));
+    e.f(e.gg({"fu"}), "add_rd_vd", e.g("src"), uint64_t(28));
+    e.f(e.gg({"fu"}), "abs_r", e.g("dst"),
+        e.shd("context_storage_" + std::to_string(i)));
+    e.f(e.gg({"fu"}), "abs_r", e.g("fork_target"),
+        e.shd("store_ctx_" + std::to_string(i + 1)));
+    e.f(e.gg({"fu"}), "jump", e.shd("fork_mv_ctx"));
+    e.end();
+  }
+
+  e.fr("accum");
+  e.fr("dst");
+  e.fr("fork_target");
+  e.fr("src");
+
+  e.start_segment("store_ctx_256");
+  e.bsp("esp_", eg::i8086::esp);
+  e.f(e.gg({"fu"}), "add_rd_vd", e.g("esp_"), std::uint64_t(32));
+  e.f(e.gg({"fu"}), "jump", e.shd("clear_end"));
+  e.fr("esp_");
   e.end();
 }
 
@@ -663,24 +1079,41 @@ std::uint32_t pe32_i686::build_code(std::vector<std::uint8_t> *stub,
   build_tls_stub();
   build_reloc_stub();
   build_reloc_table();
+  build_resources();
+  build_export();
+
+  build_context_forks();
 
   e.start_segment("begin");
+  e.grab_group("common");
+  e.f(e.gg({"fu"}), "invoke", e.shd("fork_ctx"));
+  e.f(e.gg({"fu"}), "jump", e.shd("set_base"));
+  e.free_group("common");
+  e.end();
 
-  e.t("pushad");
-  e.bsp("ebp_", eg::i8086::ebp);
-  e.f(e.gg({"fu"}), "push_rd", e.g("ebp_"));
+  e.start_segment("set_base");
   e.bsp("esp_", eg::i8086::esp);
-  e.f(e.gg({"fu"}), "mov_rd_rd", e.g("ebp_"), e.g("esp_"));
   e.f(e.gg({"fu"}), "sub_rd_vd", e.g("esp_"), e.frszd());
   e.fr("esp_");
-  e.f(e.gg({"fu"}), "push_vd", std::uint64_t(0x30));
   e.bf("shift", "common");
-  e.f(e.gg({"fu"}), "pop_rd", e.g("shift"));
-  e.bsp("fs_", eg::i8086::fs);
-  e.f(e.gg({"fu"}), "mov_rd_serd", e.g("shift"), e.g("fs_"), e.g("shift"));
-  e.fr("fs_");
-  e.f(e.gg({"fu"}), "mov_rd_smd", e.g("shift"), e.g("shift"), "+",
-      std::uint64_t(0x8));
+  if (global::rc.generate_random_number() % 2 == 0 || get_ld()->is_dll()) {
+    auto seg1 = global::cs.generate_unique_string("usegment");
+    auto new_fl = e.gg({"fu"});
+    new_fl.set_flag(eg::type_flags::do_not_use_shift);
+    e.t(new_fl, "call $+5");
+    e.start_segment(seg1);
+    e.f(e.gg({"fu"}), "pop_rd", e.g("shift"));
+    e.end();
+    e.f(e.gg({"fu"}), "sub_rd_vd", e.g("shift"), e.shd(seg1));
+  } else {
+    e.f(e.gg({"fu"}), "push_vd", std::uint64_t(0x30));
+    e.f(e.gg({"fu"}), "pop_rd", e.g("shift"));
+    e.bsp("fs_", eg::i8086::fs);
+    e.f(e.gg({"fu"}), "mov_rd_serd", e.g("shift"), e.g("fs_"), e.g("shift"));
+    e.fr("fs_");
+    e.f(e.gg({"fu"}), "mov_rd_smd", e.g("shift"), e.g("shift"), "+",
+        std::uint64_t(0x8));
+  }
   e.f(e.gg({"fu"}), "store_rd", e.vshd("base"), e.g("shift"));
   e.fr("shift");
 
@@ -729,13 +1162,6 @@ std::uint32_t pe32_i686::build_code(std::vector<std::uint8_t> *stub,
 
   e.f("jump", e.shd("import"));
 
-  e.bsp("esp_", eg::i8086::esp);
-  e.f(e.gg({"fu"}), "mov_rd_rd", e.g("esp_"), e.g("ebp_"));
-  e.f(e.gg({"fu"}), "pop_rd", e.g("ebp_"));
-  e.f(e.gg({"fu"}), "ret");
-  e.fr("ebp_");
-  e.fr("esp_");
-
   e.end();
 
   e.enable_alter("image", "some_key", "aes");
@@ -752,6 +1178,22 @@ std::uint32_t pe32_i686::build_code(std::vector<std::uint8_t> *stub,
   reloc_directory_params.second =
       static_cast<std::uint32_t>(e.get_memory_payload_size("reloc_directory"));
 
+  if (get_ld()->is_resources_exists()) {
+    resource_directory_params.first =
+        static_cast<std::uint32_t>(e.get_memory_rva("resource_diretory"));
+    resource_directory_params.second = static_cast<std::uint32_t>(
+        e.get_memory_payload_size("resource_diretory"));
+  }
+
+  if (get_ld()->is_exports_exists()) {
+    export_rva =
+        static_cast<std::uint32_t>(e.get_memory_rva("export_directory"));
+    global::wipe_memory(
+        get_ld()->get_image(),
+        get_ld()->get_optional_header()->data_directory[0].virtual_address,
+        sizeof(ld::pe::image_export_directory));
+  }
+
   return static_cast<std::uint32_t>(e.get_memory_rva("begin"));
 }
 
@@ -761,8 +1203,9 @@ void pe32_i686::make() {
   std::vector<uint8_t> stub;
   cmpr.compress(data);
   std::uint32_t begin = build_code(&stub, &data);
-  write_header(get_ld()->get_rebuilded_header(stub.size(), begin, tls_rva,
-                                              reloc_directory_params));
+  write_header(get_ld()->get_rebuilded_header(
+      stub.size(), begin, tls_rva, reloc_directory_params,
+      resource_directory_params, export_rva));
   get_ld()->resize_with_file_align(&stub);
   write_data(&stub);
   file->close();

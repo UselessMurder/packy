@@ -483,14 +483,11 @@ void build_root::get_depended_memory(
             {bypass_flags::self, bypass_flags::childs},
             global::cs.generate_unique_number("ctx"))) {
       if ((target->get_state() >= self_state) ||
-
           ((target->check_flag(type_flags::fixed) ||
             target->check_flag(type_flags::memory_static)) &&
            flags.check_flag(dependence_flags::full_size)) ||
-
           (target->check_flag(type_flags::memory_static) &&
            flags.check_flag(dependence_flags::payload_size)) ||
-
           (target->check_flag(type_flags::memory_top) &&
            flags.check_flag(dependence_flags::shift))) {
         getter(target);
@@ -742,9 +739,7 @@ void build_root::add_processed_data(
       current_node->check_flag(type_flags::build_branch))
     dl->set_flag(type_flags::memory_top);
   dl->set_name(data_name);
-  dl->set_resolver([this, dl, processor]() {
-    processor(this, dl);
-  });
+  dl->set_resolver([this, dl, processor]() { processor(this, dl); });
 }
 
 std::string build_root::to_string() {
@@ -761,9 +756,9 @@ std::uint64_t build_root::get_memory_rva(std::string name) {
 
 std::uint64_t build_root::get_memory_payload_size(std::string memory_name) {
   std::uint64_t size = 0;
-  get_depended_memory(memory_name,
-                      [&size](memory_piece *mp) { size = mp->get_payload_size(); },
-                      {dependence_flags::shift});
+  get_depended_memory(
+      memory_name, [&size](memory_piece *mp) { size = mp->get_payload_size(); },
+      {dependence_flags::shift});
   return size;
 }
 
@@ -1089,6 +1084,11 @@ void build_root::fr(std::string r_name) {
   else
     free_register(fake_registers[r_name].first);
   fake_registers.erase(r_name);
+}
+
+void build_root::dump_fakes() {
+  for (auto fake : fake_registers)
+    printf("%s %s\n", fake.first.c_str(), fake.second.first.c_str());
 }
 
 }  // namespace eg

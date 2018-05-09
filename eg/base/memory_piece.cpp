@@ -21,10 +21,13 @@ void memory_piece::set_align(std::uint64_t current_align) {
 }
 
 void memory_piece::set_shift(std::uint64_t current_shift) {
+  set_flag(type_flags::shift_is_set);
   shift = current_shift;
 }
 
-std::uint64_t memory_piece::get_shift() { return shift; }
+std::uint64_t memory_piece::get_shift() {
+  return shift; 
+}
 
 std::uint64_t memory_piece::get_full_size() { return size + overhead; }
 
@@ -81,6 +84,10 @@ void group::resize(node *root) {
 
     if (align_value != 1)
       global::align(size, overhead, align_value);
+
+    if(br->get_state() >= build_states::translating && !check_flag(type_flags::shift_is_set))
+      return;
+
     self_state = br->get_state();
   }
 }
@@ -250,6 +257,7 @@ void code_line::rebuild(std::uint8_t build_code) {
   build_root *root = find_node_by_flag<build_root>(this, type_flags::build_root,
                                                    {bypass_flags::parents});
   if (self_state < root->get_state()) {
+
     if (check_flag(type_flags::ignore)) {
       if (build_code == 2)
         throw std::domain_error("Cant`t ignore content request!");
@@ -271,6 +279,9 @@ void code_line::rebuild(std::uint8_t build_code) {
     size = code.size();
     if (align_value != 1)
       global::align(size, overhead, align_value);
+
+    if(root->get_state() >= build_states::translating && !check_flag(type_flags::shift_is_set))
+      return;
     self_state = root->get_state();
   }
 }
@@ -414,6 +425,7 @@ dependence_line::dependence_line(node *parent, std::vector<std::string> names)
 }
 
 void dependence_line::prepare() {
+
   if (!check_flag(type_flags::node_cached)) {
     if (!resolver)
       throw std::domain_error("Resolver for dependence line with id: " +

@@ -12,6 +12,8 @@ class pe32_i686 : public base_mk {
   eg::i8086::i686 e;
   lzo_compress cmpr;
   std::uint32_t tls_rva;
+  std::uint32_t export_rva;
+  std::pair<uint32_t, uint32_t> resource_directory_params;
   std::pair<uint32_t, uint32_t> reloc_directory_params;
   ld::pe::pe32 *get_ld();
   void write_header(std::vector<std::uint8_t> header);
@@ -19,6 +21,14 @@ class pe32_i686 : public base_mk {
 
   std::uint32_t build_code(std::vector<std::uint8_t> *stub,
                            std::vector<std::uint8_t> *data);
+
+  void walk_resource(std::vector<uint8_t> &fp, std::vector<uint8_t> &sp,
+                     uint64_t id,
+                     std::vector<std::pair<uint32_t, uint64_t>> &dofs,
+                     uint32_t &dof, uint32_t &sof,
+                     ld::pe::resource_container *ct);
+
+  void build_context_forks();
 
   void search_expx_init_code();
   void get_apix_init_code();
@@ -31,6 +41,8 @@ class pe32_i686 : public base_mk {
   void build_reloc_stub();
   void build_tls_stub();
   void build_reloc_table();
+  void build_resources();
+  void build_export();
 
   std::uint32_t get_KERNEL32_hash();
   std::uint32_t get_LoadLibrary_hash();

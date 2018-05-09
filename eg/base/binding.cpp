@@ -109,6 +109,7 @@ std::vector<node *> *node::get_childs() { return &childs; }
 
 bool node::run_functor(std::function<bool(node *, std::uint64_t)> functor,
                        global::flag_container flags, std::uint64_t ctx) {
+  
   if (flags.check_flag(bypass_flags::self)) {
     if (functor(this, ctx)) return true;
   }

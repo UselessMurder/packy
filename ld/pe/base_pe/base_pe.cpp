@@ -45,6 +45,21 @@ image_base_relocation *base_pe::get_base_relocation(std::uint32_t rva) {
   return reinterpret_cast<image_base_relocation *>(&image[rva]);
 }
 
+image_resource_directory *base_pe::get_resource_directory(std::uint32_t rva) {
+  return reinterpret_cast<image_resource_directory *>(&image[rva]);
+}
+image_resource_data_entry *base_pe::get_resource_data_entry(std::uint32_t rva) {
+  return reinterpret_cast<image_resource_data_entry *>(&image[rva]);
+}
+image_resource_directory_entry *base_pe::get_resource_directory_entry(
+    std::uint32_t rva) {
+  return reinterpret_cast<image_resource_directory_entry *>(&image[rva]);
+}
+
+image_export_directory *base_pe::get_export_directory(std::uint32_t rva) {
+  return reinterpret_cast<image_export_directory *>(&image[rva]);
+}
+
 std::vector<library> *base_pe::get_import() { return &import; }
 
 bool base_pe::parse() {
@@ -178,7 +193,7 @@ void base_pe::parse_import(image_data_directory *directories) {
     wipe_thuncks(
         get_import_descriptor(begin + i * sizeof(image_import_descriptor))
             ->original_first_thunk);
-    global::wipe_memory(image, begin + i * sizeof(image_import_descriptor),
+    global::wipe_memory(&image, begin + i * sizeof(image_import_descriptor),
                         sizeof(image_import_descriptor));
     import.push_back(lib);
   }
@@ -188,8 +203,7 @@ void base_pe::parse_relocations(image_data_directory *directories) {
   if (directories[5].size == 0) return;
   std::uint32_t tmp = 0;
   for (std::uint32_t i = directories[5].virtual_address;
-       i - directories[5].virtual_address < directories[5].size;
-       i += tmp) {
+       i - directories[5].virtual_address < directories[5].size; i += tmp) {
     if (get_base_relocation(i)->size_of_block == 0 &&
         get_base_relocation(i)->virtual_address == 0)
       return;
@@ -208,7 +222,113 @@ void base_pe::parse_relocations(image_data_directory *directories) {
       beg += 2;
     }
     tmp = get_base_relocation(i)->size_of_block;
-    global::wipe_memory(image, i, get_base_relocation(i)->size_of_block);
+    global::wipe_memory(&image, i, get_base_relocation(i)->size_of_block);
+  }
+}
+
+void base_pe::parse_resources() {
+  if (is_resources_exists()) {
+    resources.root_id = global::cs.generate_unique_number("res");
+    parse_next_resource_level(0, get_resource_rva(), resources.root_id);
+  }
+}
+
+void base_pe::parse_next_resource_level(std::uint32_t depth, std::uint32_t rva,
+                                        std::uint64_t id) {
+  depth++;
+  if (depth != 4) {
+    resources.directories[id] = {.dir = (*get_resource_directory(rva)),
+                                 .entries = std::vector<resource_entry>()};
+    std::uint32_t count = get_resource_directory(rva)->number_of_named_entries +
+                          get_resource_directory(rva)->number_of_id_entries;
+    if (get_resource_directory(rva)->number_of_named_entries != 0 &&
+        get_resource_directory(rva)->number_of_id_entries != 0)
+      count--;
+    global::wipe_memory(&image, rva, sizeof(image_resource_directory));
+    std::uint32_t pointer = rva + sizeof(image_resource_directory);
+    for (std::uint32_t i = 0; i < count; i++) {
+      std::uint64_t current_id = global::cs.generate_unique_number("res");
+      std::vector<uint8_t> self_id;
+      bool dir = false, str = false;
+      if (get_resource_directory_entry(pointer)->id & 2147483648) str = true;
+      if (get_resource_directory_entry(pointer)->offset & 2147483648)
+        dir = true;
+      if (str) {
+        std::uint32_t offset =
+            get_resource_directory_entry(pointer)->id & (~2147483648);
+        read_unicode_string_from_image(get_resource_rva() + offset, self_id);
+        wipe_unicode_string(get_resource_rva() + offset);
+      } else
+        global::value_to_vector(&self_id,
+                                get_resource_directory_entry(pointer)->id,
+                                sizeof(std::uint32_t));
+      resources.directories[id].entries.push_back(
+          {.entry = (*get_resource_directory_entry(pointer)),
+           .str = str,
+           .dir = dir,
+           .self_id = self_id,
+           .child_id = current_id});
+      std::uint32_t offset = get_resource_directory_entry(pointer)->offset;
+      if (dir) offset &= ~2147483648;
+      parse_next_resource_level(depth, get_resource_rva() + offset, current_id);
+      global::wipe_memory(&image, pointer,
+                          sizeof(image_resource_directory_entry));
+      pointer += sizeof(image_resource_directory_entry);
+    }
+  } else {
+    resources.resources[id] = {.data_entry = (*get_resource_data_entry(rva)),
+                               .data = std::vector<std::uint8_t>()};
+    get_part_of_image(&resources.resources[id].data,
+                      get_resource_data_entry(rva)->offset_to_data,
+                      get_resource_data_entry(rva)->size);
+    global::wipe_memory(&image, get_resource_data_entry(rva)->offset_to_data,
+                        get_resource_data_entry(rva)->size);
+    global::wipe_memory(&image, rva, sizeof(image_resource_data_entry));
+  }
+}
+
+void base_pe::parse_exports(image_data_directory *directories) {
+  if (is_exports_exists()) {
+    std::uint32_t lu = directories[0].virtual_address;
+    std::uint32_t ld = lu + directories[0].size;
+
+    read_ascii_string_from_image(get_export_directory(lu)->name,
+                                 exports.image_name);
+    wipe_ascii_string(get_export_directory(lu)->name);
+
+    for (std::uint32_t i = 0,
+                       pointer = get_export_directory(lu)->address_of_functions;
+         i < get_export_directory(lu)->number_of_functions; i++, pointer += 4) {
+      std::uint32_t val = *((uint32_t *)(&image[pointer]));
+      if (val == 0) {
+        exports.addresses.push_back(
+            std::make_pair(std::vector<uint8_t>(4, 0), false));
+      } else {
+        std::vector<uint8_t> tmp;
+        if (val < ld && val >= lu) {
+          read_ascii_string_from_image(val, tmp);
+          wipe_ascii_string(val);
+          exports.addresses.push_back(std::make_pair(tmp, true));
+        }
+        global::value_to_vector(&tmp, val, sizeof(uint32_t));
+        exports.addresses.push_back(std::make_pair(tmp, false));
+      }
+      global::wipe_memory(&image, val, sizeof(uint32_t));
+    }
+    for (std::uint32_t
+             i = 0,
+             name_rva = get_export_directory(lu)->address_of_names,
+             ord_rva = get_export_directory(lu)->address_of_name_ordinals;
+         i < get_export_directory(lu)->number_of_names;
+         i++, name_rva += 4, ord_rva += 2) {
+      exports.names.push_back(
+          std::make_pair(std::vector<uint8_t>(),
+                         std::uint16_t(*((uint16_t *)(&image[ord_rva])))));
+      read_ascii_string_from_image(*((uint32_t *)(&image[name_rva])), exports.names.back().first);
+      wipe_ascii_string(*((uint32_t *)(&image[name_rva])));
+      global::wipe_memory(&image, *((uint32_t *)(&image[name_rva])), sizeof(uint32_t));
+      global::wipe_memory(&image, *((uint32_t *)(&image[name_rva])), sizeof(uint16_t));
+    }
   }
 }
 
@@ -288,16 +408,18 @@ union unicode_char {
   std::uint8_t byte[2];
 };
 
-void base_pe::read_unicode_string_from_image(std::uint32_t rva, std::vector<uint8_t> &string) {
+void base_pe::read_unicode_string_from_image(std::uint32_t rva,
+                                             std::vector<uint8_t> &string) {
   string.clear();
-  for(std::uint32_t i = rva; (i < image.size()) && (i + 1 < image.size()) ; i += 2) {
+  for (std::uint32_t i = rva; (i < image.size()) && (i + 1 < image.size());
+       i += 2) {
     unicode_char ch;
     ch.byte[0] = image[i];
     ch.byte[1] = image[i + 1];
     string.push_back(image[i]);
     string.push_back(image[i + 1]);
-    if(ch.unicode == 0) {
-      if(string.size() % 2 != 0)
+    if (ch.unicode == 0) {
+      if (string.size() % 2 != 0)
         throw std::domain_error("Incorrect unicode string!");
       return;
     }
@@ -316,11 +438,12 @@ void base_pe::wipe_ascii_string(std::uint32_t rva) {
 }
 
 void base_pe::wipe_unicode_string(std::uint32_t rva) {
-  for(std::uint32_t i = rva; (i < image.size()) && (i + 1 < image.size()) ; i += 2) {
+  for (std::uint32_t i = rva; (i < image.size()) && (i + 1 < image.size());
+       i += 2) {
     unicode_char ch;
     ch.byte[0] = image[i];
     ch.byte[1] = image[i + 1];
-    if(ch.unicode == 0) {
+    if (ch.unicode == 0) {
       return;
     }
     image[i] = 0;
@@ -328,8 +451,6 @@ void base_pe::wipe_unicode_string(std::uint32_t rva) {
   }
   throw std::domain_error("Size of string is more than size of file");
 }
-
-void base_pe::wipe_symbols(std::uint32_t begin) {}
 
 std::uint64_t base_pe::get_sections_count() { return section_headers.size(); }
 
@@ -347,6 +468,16 @@ std::uint32_t base_pe::section_flags_to_memory_flags(
   return 0x0;
 }
 
+bool base_pe::is_dll() {
+  if(get_file_header()->characteristics & 0x2000)
+    return true;
+  return false;
+}
+
 std::vector<std::uint32_t> *base_pe::get_relocations() { return &relocations; }
+
+resource_container *base_pe::get_resources() { return &resources; }
+
+export_container *base_pe::get_export() { return &exports; }
 
 }  // namespace ld::pe

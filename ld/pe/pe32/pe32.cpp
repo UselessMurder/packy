@@ -37,6 +37,8 @@ void pe32::continue_parsing() {
     std::remove(relocations.begin(), relocations.end(), tls_begin + 8);
     std::remove(relocations.begin(), relocations.end(), tls_begin + 12);
   }
+  parse_resources();
+  parse_exports(get_optional_header()->data_directory);
 }
 
 machine_types pe32::get_machine_type() {
@@ -109,12 +111,12 @@ void pe32::wipe_thuncks(std::uint32_t begin) {
       throw std::domain_error("thuncks size is more than file size");
     if (*((std::uint32_t *)&image[i]) == 0) break;
     thuncks.push_back(*((std::uint32_t *)&image[i]));
-    global::wipe_memory(image, i, 4);
+    global::wipe_memory(&image, i, 4);
   }
   for (auto th : thuncks) {
     if (!(th & 0x80000000)) {
       wipe_ascii_string(th + 2);
-      global::wipe_memory(image, th, 2);
+      global::wipe_memory(&image, th, 2);
     }
   }
 }
@@ -129,15 +131,20 @@ bool pe32::is_valid_nt_magic() {
 
 std::vector<uint8_t> pe32::get_rebuilded_header(
     std::uint32_t stub_size, std::uint32_t code_begin, std::uint32_t tls_rva,
-    std::pair<std::uint32_t, std::uint32_t> reloc_directory) {
+    std::pair<std::uint32_t, std::uint32_t> reloc_directory,
+    std::pair<std::uint32_t, std::uint32_t> resource_directory,
+    std::uint32_t export_rva) {
   std::vector<uint8_t> new_header(
       image.begin(), image.begin() + get_optional_header()->size_of_headers);
+
   image_optional_header32 *header =
       reinterpret_cast<image_optional_header32 *>(&new_header[optional_header]);
   for (std::uint32_t i = 0; i < 16; i++) {
     header->data_directory[i].virtual_address = 0;
     header->data_directory[i].size = 0;
   }
+  ((image_file_header *)&new_header[file_header])->pointer_to_symbol_table = 0;
+  ((image_file_header *)&new_header[file_header])->number_of_symbols = 0;
   ((image_file_header *)&new_header[file_header])->number_of_sections = 2;
   header->size_of_code = stub_size;
   header->size_of_initialized_data = stub_size;
@@ -145,12 +152,15 @@ std::vector<uint8_t> pe32::get_rebuilded_header(
       image.size() - get_section_header(0)->virtual_address;
   header->address_of_entry_point = code_begin;
 
-  header->data_directory[9].virtual_address = tls_rva;
-  header->data_directory[9].size = sizeof(image_tls_directory32);
+  header->data_directory[2].virtual_address = resource_directory.first;
+  header->data_directory[2].size = resource_directory.second;
   header->data_directory[5].virtual_address = reloc_directory.first;
   header->data_directory[5].size = reloc_directory.second;
-
-  // header->dll_characteristics = header->dll_characteristics & ~0x0040;
+  header->data_directory[9].virtual_address = tls_rva;
+  header->data_directory[9].size = sizeof(image_tls_directory32);
+  header->data_directory[0].virtual_address = export_rva;
+  header->data_directory[0].size =
+      get_optional_header()->data_directory[0].size;
 
   std::uint64_t size = image.size();
   std::uint64_t overhead = 0;
@@ -185,6 +195,7 @@ void pe32::make_first_section_header(std::vector<std::uint8_t> &header) {
   section_header->virtual_address = get_section_header(0)->virtual_address;
   section_header->characteristics |= 20;
   section_header->characteristics |= 80;
+  if (!is_nx_compatible()) section_header->characteristics |= 0x20000000;
   section_header->characteristics |= 0x40000000;
   section_header->characteristics |= 0x80000000;
 }
@@ -267,6 +278,32 @@ bool pe32::is_tls_exists() {
   return true;
 }
 
+bool pe32::is_resources_exists() {
+  if (get_optional_header()->data_directory[2].virtual_address == 0 ||
+      get_optional_header()->data_directory[2].size == 0)
+    return false;
+  return true;
+}
+
+bool pe32::is_reloc_exists() {
+  if (get_optional_header()->data_directory[5].virtual_address == 0 ||
+      get_optional_header()->data_directory[5].size == 0)
+    return false;
+  return true;
+}
+
+bool pe32::is_exports_exists() {
+  if (get_optional_header()->data_directory[0].virtual_address == 0 ||
+      get_optional_header()->data_directory[0].size == 0)
+    return false;
+  return true;
+}
+
+bool pe32::is_nx_compatible() {
+  if (get_optional_header()->dll_characteristics & 0x0100) return true;
+  return false;
+}
+
 image_tls_directory32 *pe32::get_tls_directory() {
   if (!is_tls_exists()) throw std::domain_error("TLS directory is not exists!");
 
@@ -279,6 +316,14 @@ std::uint32_t pe32::get_tls_rva() {
   return get_optional_header()->data_directory[9].virtual_address;
 }
 
+std::uint32_t pe32::get_resource_rva() {
+  return get_optional_header()->data_directory[2].virtual_address;
+}
+
+std::uint32_t pe32::get_resource_size() {
+  return get_optional_header()->data_directory[2].size;
+}
+
 void pe32::wipe_tls_directory() {
   if (!is_tls_exists()) throw std::domain_error("TLS directory is not exists!");
 
@@ -287,9 +332,9 @@ void pe32::wipe_tls_directory() {
   std::uint32_t begin = get_tls_directory()->start_address_of_raw_data -
                         get_optional_header()->image_base;
 
-  global::wipe_memory(image, begin, size + 1);
+  global::wipe_memory(&image, begin, size + 1);
 
-  global::wipe_memory(image,
+  global::wipe_memory(&image,
                       get_optional_header()->data_directory[9].virtual_address,
                       sizeof(image_tls_directory32));
 }
@@ -300,5 +345,7 @@ void pe32::get_part_of_image(std::vector<uint8_t> *part, std::uint32_t rva,
   std::copy(image.begin() + rva, image.begin() + rva + size,
             std::back_inserter((*part)));
 }
+
+std::vector<uint8_t> *pe32::get_image() { return &image; }
 
 }  // namespace ld::pe

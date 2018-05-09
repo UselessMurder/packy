@@ -270,6 +270,8 @@ class build_root : public node,
   std::string g(std::string r_name, std::string half_name);
   void fr(std::string r_name);
 
+  void dump_fakes();
+
   void build(std::vector<uint8_t> *stub);
 
   virtual void copy_fundamental() = 0;

@@ -30,8 +30,8 @@ LIBS += -lboost_system
 LIBS += -lcryptopp
 LIBS += -llzo2
 
-CPPFLAGS += -std=c++17 -Wc++17-extensions -Ofast -fopenmp -D_GLIBCXX_PARALLEL -march=native $(INC_DIR)  
-#CPPFLAGS += -std=c++17 -static-libstdc++ -O3 $(INC_DIR) 
+CPPFLAGS += -std=c++17 -Wc++17-extensions -Ofast -march=native $(INC_DIR)  
+#CPPFLAGS += -std=c++17 -static-libstdc++ -Ofast -march=native $(INC_DIR)  
 
 OBJECTS = objfiles/main.o
 OBJECTS += objfiles/packy.o
