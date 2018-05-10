@@ -33,9 +33,11 @@ class pe32_i686 : public base_mk {
   void search_expx_init_code();
   void get_apix_init_code();
   void error_exit_init_code();
+  void clear_exit_init_code();
   void end_init_code();
   void find_library_init_code();
   void load_function_init_code();
+  void vista_or_higher_init_code();
   void build_import_stub();
   void build_mprotect_stub();
   void build_reloc_stub();
@@ -50,6 +52,7 @@ class pe32_i686 : public base_mk {
   std::uint32_t get_GetProcAddress_hash();
   std::uint32_t get_ExitProcess_hash();
   std::uint32_t get_VirtualProtect_hash();
+  std::uint32_t get_GetVersionEx_hash();
   void init_traps();
 
  public:

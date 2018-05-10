@@ -3015,7 +3015,7 @@ void i686::init_invariants() {
   iv = make_invariant(cf);
   iv->set_flag(type_flags::stack_safe);
   iv->copy_flags(gg({"ss", "fs", "up", "fu"}));
-  iv->PROGRAMMER(EG->t(CAST, "and ", VARS["r"], ",", VARS["a"]););
+  iv->PROGRAMMER(EG->ta(CAST, "nasm", "and ", VARS["r"], ",", VARS["a"]););
   // and_rd_vd end
 
   // and_rd_md begin

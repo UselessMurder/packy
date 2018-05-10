@@ -14,6 +14,7 @@ pe32_i686::pe32_i686() : base_mk() {
   export_rva = 0;
   reloc_directory_params.first = 0;
   reloc_directory_params.second = 0;
+  init_traps();
 }
 pe32_i686::pe32_i686(fs::out_file *out_file) : base_mk(out_file) {
   tls_rva = 0;
@@ -22,6 +23,7 @@ pe32_i686::pe32_i686(fs::out_file *out_file) : base_mk(out_file) {
   export_rva = 0;
   reloc_directory_params.first = 0;
   reloc_directory_params.second = 0;
+  init_traps();
 }
 pe32_i686::~pe32_i686() {}
 
@@ -100,8 +102,162 @@ std::uint32_t pe32_i686::get_VirtualProtect_hash() {
   return result;
 }
 
-void pe32_i686::init_traps() {
+std::uint32_t pe32_i686::get_GetVersionEx_hash() {
+  std::vector<std::uint8_t> getosversionex = {0x47, 0x65, 0x74, 0x56, 0x65,
+                                              0x72, 0x73, 0x69, 0x6f, 0x6e,
+                                              0x45, 0x78, 0x41, 0x00};
+  std::uint32_t result = get_KERNEL32_hash();
+  cry::crc32 c;
+  c.set(getosversionex);
+  result += c.get();
+  return result;
+}
 
+void pe32_i686::init_traps() {
+  // integrity_check
+  add_trap("integrity_check",
+           [this](eg::key_value_storage &values, global::flag_container fl) {
+             auto seg1 = global::cs.generate_unique_string("usegment");
+             e.f(fl, "store_abs", e.vshd("target"),
+                 e.shd(values.get_value<std::string>("target")));
+             e.f(fl, "store_vd", e.vshd("count"),
+                 e.fszd(values.get_value<std::string>("target")));
+             e.f(fl, "store_vb", e.vshd("crc_switch"), std::uint64_t(0));
+             e.f(fl, "invoke", e.shd("crc"));
+             e.bs("tmp_1", "common");
+             e.bs("tmp_2", "common");
+             e.f(fl, "push_rd", e.g("tmp_1"));
+             e.f(fl, "push_rd", e.g("tmp_2"));
+             e.f(fl, "load_rd", e.g("tmp_2"), e.vshd("result"));
+             e.f(fl, "mov_rd_vd", e.g("tmp_1"), e.c32d("begin", {}));
+             e.f(fl, "cmp_rd_rd", e.g("tmp_1"), e.g("tmp_2"));
+             auto new_fl = fl;
+             new_fl.set_flag(eg::type_flags::flag_safe);
+             e.f(new_fl, "pop_rd", e.g("tmp_2"));
+             e.f(new_fl, "pop_rd", e.g("tmp_1"));
+             e.fr("tmp_1");
+             e.fr("tmp_2");
+             e.f(fl, "branch", "e", e.shd(seg1),
+                 e.shd(values.get_value<std::string>("if_error")));
+             e.end();
+             e.start_segment(seg1);
+           });
+  add_tags_to_trap("integrity_check", {"all", "with_target"});
+
+  // IsDebbugerPresent
+  add_trap("is_debbuger_present",
+           [this](eg::key_value_storage &values, global::flag_container fl) {
+             auto seg1 = global::cs.generate_unique_string("usegment");
+             e.bs("tmp", "common");
+             e.f(fl, "push_rd", e.g("tmp"));
+             e.f(fl, "mov_rd_vd", e.g("tmp"), std::uint64_t(0x30));
+             e.bss("fs_", eg::i8086::fs);
+             e.f(fl, "mov_rd_serd", e.g("tmp"), e.g("fs_"), e.g("tmp"));
+             e.fr("fs_");
+             e.f(fl, "add_rd_vd", e.g("tmp"), std::uint64_t(2));
+             e.f(fl, "movzx_rd_mb", e.g("tmp"), e.g("tmp"));
+             e.f(fl, "test_rd_rd", e.g("tmp"), e.g("tmp"));
+             auto new_fl = fl;
+             new_fl.set_flag(eg::type_flags::flag_safe);
+             e.f(new_fl, "pop_rd", e.g("tmp"));
+             e.fr("tmp");
+             e.f(fl, "branch", "e", e.shd(seg1),
+                 e.shd(values.get_value<std::string>("if_error")));
+             e.end();
+             e.start_segment(seg1);
+           });
+  add_tags_to_trap("is_debbuger_present", {"all", "undep"});
+
+  // NtGlobalFlag
+  add_trap("nt_global_flag",
+           [this](eg::key_value_storage &values, global::flag_container fl) {
+             auto seg1 = global::cs.generate_unique_string("usegment");
+             e.bs("tmp", "common");
+             e.f(fl, "push_rd", e.g("tmp"));
+             e.f(fl, "mov_rd_vd", e.g("tmp"), std::uint64_t(0x30));
+             e.bss("fs_", eg::i8086::fs);
+             e.f(fl, "mov_rd_serd", e.g("tmp"), e.g("fs_"), e.g("tmp"));
+             e.fr("fs_");
+             e.f(fl, "add_rd_vd", e.g("tmp"), std::uint64_t(0x68));
+             e.f(fl, "mov_rd_md", e.g("tmp"), e.g("tmp"));
+             auto new_fl = fl;
+             new_fl.set_flag(eg::type_flags::flag_safe);
+             e.f(new_fl, "and_rd_vd", e.g("tmp"), std::uint64_t(0x70));
+             e.f(new_fl, "pop_rd", e.g("tmp"));
+             e.fr("tmp");
+             e.f(fl, "branch", "z", e.shd(seg1),
+                 e.shd(values.get_value<std::string>("if_error")));
+             e.end();
+             e.start_segment(seg1);
+           });
+  add_tags_to_trap("nt_global_flag", {"all", "undep"});
+
+  // HeapFlags
+  add_trap("heap_flags", [this](eg::key_value_storage &values,
+                                global::flag_container fl) {
+    auto over = global::cs.generate_unique_string("usegment");
+    auto end = global::cs.generate_unique_string("usegment");
+    auto compare_2 = global::cs.generate_unique_string("usegment");
+    auto compare_1 = global::cs.generate_unique_string("usegment");
+    auto large = global::cs.generate_unique_string("usegment");
+    auto smaller = global::cs.generate_unique_string("usegment");
+    e.bs("tmp_1", "common");
+    e.bs("tmp_2", "common");
+    e.bss("ebp_", eg::i8086::ebp);
+    e.f(fl, "push_rd", e.g("tmp_1"));
+    e.f(fl, "push_rd", e.g("tmp_2"));
+    e.f(fl, "mov_rd_vd", e.g("tmp_1"), std::uint64_t(0x30));
+    e.bss("fs_", eg::i8086::fs);
+    e.f(fl, "mov_rd_serd", e.g("tmp_1"), e.g("fs_"), e.g("tmp_1"));
+    e.fr("fs_");
+    e.f(fl, "add_rd_vd", e.g("tmp_1"), std::uint64_t(0x18));
+    e.f(fl, "mov_rd_md", e.g("tmp_1"), e.g("tmp_1"));
+    e.f(fl, "mov_rd_rd", e.g("tmp_2"), e.g("tmp_1"));
+    e.f(fl, "test_smb_vb", e.g("ebp_"), "-", e.vshd("os_switch"),
+        std::uint64_t(1));
+    e.fr("ebp_");
+    e.f(fl, "branch", "nz", e.shd(large), e.shd(smaller));
+    e.end();
+
+    e.start_segment(large);
+    e.f(fl, "add_rd_vd", e.g("tmp_1"), std::uint64_t(0x40));
+    e.f(fl, "add_rd_vd", e.g("tmp_2"), std::uint64_t(0x44));
+    e.f(fl, "jump", e.shd(compare_1));
+    e.end();
+
+    e.start_segment(smaller);
+    e.f(fl, "add_rd_vd", e.g("tmp_1"), std::uint64_t(0xC));
+    e.f(fl, "add_rd_vd", e.g("tmp_2"), std::uint64_t(0x10));
+    e.f(fl, "jump", e.shd(compare_1));
+    e.end();
+
+    e.start_segment(compare_1);
+    e.f(fl, "mov_rd_md", e.g("tmp_1"), e.g("tmp_1"));
+    e.f(fl, "mov_rd_md", e.g("tmp_2"), e.g("tmp_2"));
+    e.f(fl, "cmp_rd_vd", e.g("tmp_2"), std::uint64_t(0));
+    e.f(fl, "branch", "ne", e.shd(over), e.shd(compare_2));
+    e.end();
+
+    e.start_segment(compare_2);
+    auto new_fl = fl;
+    new_fl.set_flag(eg::type_flags::flag_safe);
+    e.f(new_fl, "and_rd_vd", e.g("tmp_1"), std::uint64_t(0xfffffffd));
+    e.f(fl, "branch", "z", e.shd(end), e.shd(over));
+    e.end();
+
+    e.start_segment(over);
+    e.f(fl, "pop_rd", e.g("tmp_2"));
+    e.f(fl, "pop_rd", e.g("tmp_1"));
+    e.f(fl, "jump", e.shd(values.get_value<std::string>("if_error")));
+    e.end();
+
+    e.start_segment(end);
+    e.f(fl, "pop_rd", e.g("tmp_2"));
+    e.f(fl, "pop_rd", e.g("tmp_1"));
+    e.fr("tmp_1");
+    e.fr("tmp_2");
+  });
+  add_tags_to_trap("heap_flags", {"all"});
 }
 
 void pe32_i686::end_init_code() {
@@ -131,9 +287,33 @@ void pe32_i686::end_init_code() {
   e.end();
 }
 
+void pe32_i686::clear_exit_init_code() {
+  e.start_segment("clear_exit");
+  e.bf("accum", "common");
+  e.bf("target", "common");
+  e.f("abs_r", e.g("target"),
+      e.shd("context_storage_" +
+            std::to_string(global::rc.generate_random_number() % 256)));
+  for (uint8_t i = 0; i < 8; i++) {
+    e.f("mov_rd_md", e.g("accum"), e.g("target"));
+    e.f("push_rd", e.g("accum"));
+    e.f("add_rd_vd", e.g("target"), std::uint64_t(4));
+  }
+  e.fr("accum");
+  e.fr("target");
+  e.grab_group("common");
+  e.f("popad");
+  e.bsp("esp_", eg::i8086::esp);
+  e.f(e.gg({"fu"}), "add_rd_vd", e.g("esp_"), e.frszd());
+  e.fr("esp_");
+  e.f(e.gg({"fu"}), "ret");
+  e.free_group("common");
+  e.end();
+}
+
 void pe32_i686::error_exit_init_code() {
   e.start_segment("error_exit");
-  e.f("push_vd", std::uint64_t(0));
+  e.f("push_vd", std::uint64_t(1));
   e.bss("ebp_", eg::i8086::ebp);
   e.f("call_smd", e.g("ebp_"), "-", e.vshd("ExitProcess"));
   e.fr("ebp_");
@@ -371,6 +551,37 @@ void pe32_i686::load_function_init_code() {
   e.start_segment("function_found");
   e.f("store_rd", e.vshd("func"), e.g("eax_"));
   e.fr("eax_");
+  e.f("jump", e.shd("clear_end"));
+  e.end();
+}
+
+void pe32_i686::vista_or_higher_init_code() {
+  e.start_segment("vista_or_higher");
+  e.bf("tmp", "common");
+  e.bsp("esp_", eg::i8086::esp);
+  e.bsp("ebp_", eg::i8086::ebp);
+  e.f("sub_rd_vd", e.g("esp_"), std::uint64_t(0x90));
+  e.f("push_vd", std::uint64_t(0x94));
+  e.f("mov_rd_rd", e.g("tmp"), e.g("esp_"));
+  e.f("push_rd", e.g("tmp"));
+  e.f("call_smd", e.g("ebp_"), "-", e.vshd("GetVersionEx"));
+  e.fr("ebp_");
+  e.f("pop_rd", e.g("tmp"));
+  e.f("pop_rd", e.g("tmp"));
+  e.f("add_rd_vd", e.g("esp_"), std::uint64_t(0x8c));
+  e.fr("esp_");
+  e.f("cmp_rd_vd", e.g("tmp"), std::uint64_t(6));
+  e.fr("tmp");
+  e.f("branch", "ge", e.shd("set_vista_flag"), e.shd("unset_vista_flag"));
+  e.end();
+
+  e.start_segment("set_vista_flag");
+  e.f("store_vb", e.vshd("os_switch"), std::uint64_t(1));
+  e.f("jump", e.shd("clear_end"));
+  e.end();
+
+  e.start_segment("unset_vista_flag");
+  e.f("store_vb", e.vshd("os_switch"), std::uint64_t(0));
   e.f("jump", e.shd("clear_end"));
   e.end();
 }
@@ -1086,20 +1297,23 @@ std::uint32_t pe32_i686::build_code(std::vector<std::uint8_t> *stub,
   e.add_var("current_dll", 4);
   e.add_var("func", 4);
   e.add_var("trash_ptr", 4);
-  e.add_var("message_box_switch", 1);
+  e.add_var("os_switch", 1);
+  e.add_var("align", 2);
   e.add_var("LoadLibrary", 4);
   e.add_var("GetModuleHandle", 4);
   e.add_var("GetProcAddr", 4);
   e.add_var("ExitProcess", 4);
   e.add_var("VirtualProtect", 4);
-  e.add_var("MessageBox", 4);
+  e.add_var("GetVersionEx", 4);
 
   search_expx_init_code();
   get_apix_init_code();
   error_exit_init_code();
+  clear_exit_init_code();
   end_init_code();
   find_library_init_code();
   load_function_init_code();
+  vista_or_higher_init_code();
   build_mprotect_stub();
   build_import_stub();
   build_tls_stub();
@@ -1145,37 +1359,13 @@ std::uint32_t pe32_i686::build_code(std::vector<std::uint8_t> *stub,
   }
   e.f(e.gg({"fu"}), "store_rd", e.vshd("base"), e.g("shift"));
   e.fr("shift");
-  e.f("jump", e.shd("check_begin_break"));
-  e.end();
-
-  e.start_segment("clear_exit");
-  e.bsp("esp_", eg::i8086::esp);
-  e.f("add_rd_vd", e.g("esp_"), e.frszd());
-  e.fr("esp_");
-  e.f("ret");
+  e.f("jump", e.shd("decrypt_secondary_key"));
   e.end();
 
   e.enable_alter("image", "some_key", "aes");
   e.add_key("some_key");
   e.enable_alter("decrypt_paramount_key", "third_rate_key", "byte_ecb");
   e.enable_alter("some_key", "secondary_key", "dword_ecb");
-
-  e.start_segment("check_begin_break");
-  e.f("store_abs", e.vshd("target"), e.shd("begin"));
-  e.f("store_vd", e.vshd("count"), e.fszd("begin"));
-  e.f("store_vb", e.vshd("crc_switch"), std::uint64_t(0));
-  e.f("invoke", e.shd("crc"));
-  e.bs("tmp_1", "common");
-  e.bs("tmp_2", "common");
-  e.push_registers({e.g("tmp_1"), e.g("tmp_2")});
-  e.f("load_rd", e.g("tmp_2"), e.vshd("result"));
-  e.f("mov_rd_vd", e.g("tmp_1"), e.c32d("begin", {}));
-  e.f("cmp_rd_rd", e.g("tmp_1"), e.g("tmp_2"));
-  e.pop_registers({e.g("tmp_1"), e.g("tmp_2")});
-  e.fr("tmp_1");
-  e.fr("tmp_2");
-  e.f("branch", "e", e.shd("decrypt_secondary_key"), e.shd("clear_exit"));
-  e.end();
 
   e.start_segment("decrypt_secondary_key");
   e.f("store_abs", e.vshd("target"), e.shd("decrypt_paramount_key"));
@@ -1239,6 +1429,21 @@ std::uint32_t pe32_i686::build_code(std::vector<std::uint8_t> *stub,
   e.f("load_rd", e.g("tmp"), e.vshd("func"));
   e.f("store_rd", e.vshd("VirtualProtect"), e.g("tmp"));
   e.fr("tmp");
+
+  e.f("store_rd", e.vshd("hash"), std::uint64_t(get_GetVersionEx_hash()));
+  e.f("invoke", e.shd("get_apix"));
+  e.bf("tmp", "common");
+  e.f("load_rd", e.g("tmp"), e.vshd("func"));
+  e.f("store_rd", e.vshd("GetVersionEx"), e.g("tmp"));
+  e.fr("tmp");
+
+  e.f("invoke", e.shd("vista_or_higher"));
+
+  // auto beg_trap = add_container();
+  // add_to_container(beg_trap, "target", std::string("begin"));
+  // add_to_container(beg_trap, "if_error", std::string("clear_exit"));
+  // insert_trap("heap_flags", beg_trap, {});
+  // remove_container(beg_trap);
 
   e.f("jump", e.shd("import"));
   e.end();
