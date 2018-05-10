@@ -12,7 +12,11 @@
 
 namespace eg {
 
-current_cache global_cache;
+#ifdef USE_CACHE
+current_cache global_current_cache;
+name_cache global_name_cache;
+node *global_root = NULL;
+#endif
 
 global_object::global_object() {
   global_object_id = global::cs.generate_unique_number("gobj");
@@ -68,7 +72,9 @@ bool node::in_context(std::uint64_t ctx) {
   return false;
 }
 
-void node::bind_recall(std::uint64_t ctx) { recall.insert(ctx); }
+void node::bind_recall(std::uint64_t ctx) {
+  recall.insert(ctx);
+}
 void node::untie_recall(std::uint64_t ctx) {
   if (recall.find(ctx) == recall.end())
     throw std::invalid_argument("Node can`t leave context: " +
@@ -80,7 +86,12 @@ bool node::is_recall(std::uint64_t ctx) {
   return false;
 }
 
-void node::set_name(std::string current_name) { name = current_name; }
+void node::set_name(std::string current_name) {
+#ifdef USE_CACHE
+  global_name_cache.set_node_name(current_name, this);
+#endif
+  name = current_name;
+}
 
 std::string node::get_name() { return name; }
 
@@ -109,10 +120,14 @@ std::vector<node *> *node::get_childs() { return &childs; }
 
 bool node::run_functor(std::function<bool(node *, std::uint64_t)> functor,
                        global::flag_container flags, std::uint64_t ctx) {
-  
   if (flags.check_flag(bypass_flags::self)) {
     if (functor(this, ctx)) return true;
   }
+
+  global::named_defer recall_defer;
+
+  if (is_recall(ctx))
+    recall_defer.set_defer([this, ctx]() { this->untie_recall(ctx); });
 
   join_context(ctx);
   DEFER(this->leave_context(ctx););
@@ -129,7 +144,6 @@ bool node::run_functor(std::function<bool(node *, std::uint64_t)> functor,
   }
 
   if (is_recall(ctx)) {
-    DEFER(this->untie_recall(ctx););
     if (functor(this, ctx)) return true;
   }
 
@@ -147,7 +161,7 @@ bool node::run_functor(std::function<bool(node *, std::uint64_t)> functor,
 
 void node::select_node() {
 #ifdef USE_CACHE
-  global_cache.append_current(this);
+  global_current_cache.append_current(this);
 #else
   if (check_flag(type_flags::node_current))
     throw std::domain_error(
@@ -175,7 +189,7 @@ void node::select_node() {
 
 void node::unselect_node() {
 #ifdef USE_CACHE
-  global_cache.remove_current();
+  global_current_cache.remove_current();
 #else
   node *target = 0;
 
@@ -201,7 +215,7 @@ void node::unselect_node() {
 
 node *node::get_current() {
 #ifdef USE_CACHE
-  return global_cache.get_current();
+  return global_current_cache.get_current();
 #else
   return find_node_by_flag<node>(this, type_flags::node_current,
                                  {bypass_flags::self, bypass_flags::childs});
@@ -347,5 +361,19 @@ node *current_cache::get_current() {
   if (list_size == 0) throw std::domain_error("Current cache is empty!");
   return currents.back();
 }
+
+name_cache::name_cache() {}
+name_cache::~name_cache() {}
+void name_cache::set_node_name(std::string name, node *current_node) {
+#ifdef NODE_DEBUG
+  if (named_nodes.count(name) != 0)
+    throw std::domain_error("Node with name: " + name + " alreay exists!");
+#endif
+  named_nodes[name] = current_node;
+}
+node *name_cache::get_node_by_name(std::string name) {
+  return named_nodes[name];
+}
+void name_cache::cleanup() { named_nodes.clear(); }
 
 }  // namespace eg

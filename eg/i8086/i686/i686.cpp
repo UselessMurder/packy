@@ -1,4 +1,5 @@
-// This is an open source non-commercial project. Dear PVS-Studio, please check it.
+// This is an open source non-commercial project. Dear PVS-Studio, please check
+// it.
 
 // PVS-Studio Static Code Analyzer for C, C++ and C#: http://www.viva64.com
 
@@ -1785,13 +1786,13 @@ void i686::init_invariants() {
 
   // push end
 
-  //popa begin
+  // popa begin
   cf = make_form("popad");
 
   iv = make_invariant(cf);
   iv->copy_flags(gg({"st", "ss", "fs", "up", "fu"}));
   iv->PROGRAMMER(EG->t(CAST, "popa"););
-  //popa begin
+  // popa begin
 
   // pop begin
 

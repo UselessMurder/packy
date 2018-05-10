@@ -83,7 +83,7 @@ class data_line : public memory_piece {
    protected:
     std::vector<std::uint8_t> data;
     std::vector<std::uint8_t> overhead_content;
-    virtual void prepare();
+    virtual void prepare(std::uint8_t build_code);
 
    public:
     data_line(node *parent);
@@ -99,7 +99,7 @@ class data_line : public memory_piece {
 class dependence_line : public data_line, public string_container {
    private:
     std::function<void()> resolver;
-    void prepare();
+    void prepare(std::uint8_t build_code);
 
    public:
     dependence_line(node *parent, std::vector<std::string> names);

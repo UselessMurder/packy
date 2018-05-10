@@ -6,7 +6,7 @@
 #include <cry/crypto.h>
 #include <eg/base/base_eg.h>
 
-#define LOOP_STUB                                                           \
+#define PART_LOOP_STUB                                                      \
   global::named_defer ignore_defer;                                         \
   auto parent = find_node_by_flag<memory_piece>(p, type_flags::memory_code, \
                                                 {bypass_flags::parents});   \
@@ -137,6 +137,9 @@ build_root::build_root()
       machine_state(),
       recursion_counter(),
       sin::stub() {
+#ifdef USE_CACHE
+  global_root = this;
+#endif
   set_flag(type_flags::build_root);
   base = 0;
   self_state = build_states::programming;
@@ -150,7 +153,11 @@ build_root::build_root()
   init_cryptography();
 }
 build_root::~build_root() {
+#ifdef USE_CACHE
+  global_root = NULL;
+#endif
   for (auto a : assemblers) r_asm_free(a.second);
+  global_name_cache.cleanup();
 }
 
 void build_root::init_cryptography() {
@@ -418,6 +425,7 @@ void build_root::keyring() {
 
 void build_root::locating() {
   self_state = build_states::locating;
+
   get_build_node()->run_functor(
       [this](node *n, std::uint64_t ctx) -> bool {
         if (n->check_flag(type_flags::memory_top))
@@ -425,12 +433,14 @@ void build_root::locating() {
         return false;
       },
       {bypass_flags::childs}, global::cs.generate_unique_number("ctx"));
+
   global::rc.random_shuffle_vector(&build_sequence);
   std::uint64_t current_shift = base;
   for (auto mp : build_sequence) {
     mp->set_shift(current_shift);
     current_shift += mp->get_full_size();
   }
+
   stub_size = current_shift - base;
 }
 
@@ -438,6 +448,8 @@ void build_root::translating(std::vector<uint8_t> *stub) {
   self_state = build_states::translating;
 
   for (auto mp : build_sequence) {
+    if(mp->check_flag(type_flags::memory_group) && mp->check_flag(type_flags::full_processed))
+      continue;
     std::uint64_t shift_val = mp->get_shift();
     mp->run_functor(
         [&shift_val](node *n, std::uint64_t ctx) -> bool {
@@ -445,6 +457,7 @@ void build_root::translating(std::vector<uint8_t> *stub) {
             auto mp = node_cast<memory_piece>(n);
             if (mp->is_recall(ctx)) {
               shift_val += mp->get_full_size() - mp->get_payload_size();
+              mp->set_flag(type_flags::full_processed);
               return false;
             }
             mp->set_shift(shift_val);
@@ -455,7 +468,7 @@ void build_root::translating(std::vector<uint8_t> *stub) {
           }
           return false;
         },
-        {bypass_flags::childs}, global::cs.generate_unique_number("ctx"));
+        {bypass_flags::self, bypass_flags::childs}, global::cs.generate_unique_number("ctx"));
   }
 
   for (auto mp : build_sequence) {
@@ -468,77 +481,71 @@ void build_root::translating(std::vector<uint8_t> *stub) {
 void build_root::get_depended_memory(
     std::string memory_name, std::function<void(memory_piece *mp)> getter,
     global::flag_container flags) {
-  for (auto mp : build_sequence) {
-    memory_piece *target = reinterpret_cast<memory_piece *>(0);
-    if (mp->run_functor(
-            [&memory_name, &target](node *n, std::uint64_t ctx) -> bool {
-              if (n->check_flag(type_flags::build_memory) &&
-                  (std::strcmp(memory_name.data(), n->get_name().data()) ==
-                   0)) {
-                target = node_cast<memory_piece>(n);
-                return true;
-              }
-              return false;
-            },
-            {bypass_flags::self, bypass_flags::childs},
-            global::cs.generate_unique_number("ctx"))) {
-      if ((target->get_state() >= self_state) ||
-          ((target->check_flag(type_flags::fixed) ||
-            target->check_flag(type_flags::memory_static)) &&
-           flags.check_flag(dependence_flags::full_size)) ||
-          (target->check_flag(type_flags::memory_static) &&
-           flags.check_flag(dependence_flags::payload_size)) ||
-          (target->check_flag(type_flags::memory_top) &&
-           flags.check_flag(dependence_flags::shift))) {
-        getter(target);
-        return;
-      }
+  memory_piece *target = find_node_by_name<memory_piece>(
+      get_build_node(), memory_name, {bypass_flags::childs});
 
-      std::uint64_t shift_val = mp->get_shift();
-      auto ok = std::make_pair<std::uint64_t, std::uint64_t>(0, 0);
-      mp->run_functor(
-          [&memory_name, &getter, &shift_val, &ok, &flags](
-              node *n, std::uint64_t ctx) -> bool {
-            if (n->check_flag(type_flags::build_memory)) {
-              bool finally = false;
-              auto mp = node_cast<memory_piece>(n);
-              if (mp->is_recall(ctx)) {
-                shift_val += mp->get_full_size() - mp->get_payload_size();
-                if (ok.first == n->get_object_id() && ok.second == ctx)
-                  finally = true;
-              } else {
-                mp->set_shift(shift_val);
-                if ((std::strcmp(memory_name.data(), n->get_name().data()) ==
-                     0)) {
-                  ok.first = n->get_object_id();
-                  ok.second = ctx;
-                }
-                if (n->check_flag(type_flags::memory_group)) {
-                  n->bind_recall(ctx);
-                  if ((ok.first == n->get_object_id() && ok.second == ctx) &&
-                      flags.check_flag(dependence_flags::shift))
-                    finally = true;
-                } else {
-                  shift_val += mp->get_full_size();
-                  if (ok.first == n->get_object_id() && ok.second == ctx)
-                    finally = true;
-                }
-              }
-              if (finally) {
-                getter(mp);
-                return true;
-              }
-            }
-            return false;
-          },
-          {bypass_flags::self, bypass_flags::childs},
-          global::cs.generate_unique_number("ctx"));
+  memory_piece *mp = reinterpret_cast<memory_piece *>(0);
+
+  if (target->check_flag(type_flags::memory_top))
+    mp = target;
+  else
+    mp = find_node_by_flag<memory_piece>(target, type_flags::memory_top,
+                                         {bypass_flags::parents});
+
+  if(!target->check_flag(type_flags::memory_group) || target->check_flag(type_flags::full_processed)) {
+    if ((target->get_state() >= self_state) ||
+        ((target->check_flag(type_flags::fixed) ||
+          target->check_flag(type_flags::memory_static)) &&
+         flags.check_flag(dependence_flags::full_size)) ||
+        (target->check_flag(type_flags::memory_static) &&
+         flags.check_flag(dependence_flags::payload_size)) ||
+        (target->check_flag(type_flags::memory_top) &&
+         flags.check_flag(dependence_flags::shift))) {
+      getter(target);
       return;
     }
   }
-  throw std::invalid_argument(
-      "Cant`t get depended memory, because can`t find memory with name: " +
-      memory_name);
+
+  std::uint64_t shift_val = mp->get_shift();
+  auto ok = std::make_pair<std::uint64_t, std::uint64_t>(0, 0);
+  mp->run_functor(
+      [&memory_name, &getter, &shift_val, &ok, &flags](
+          node *n, std::uint64_t ctx) -> bool {
+        if (n->check_flag(type_flags::build_memory)) {
+          bool finally = false;
+          auto mp = node_cast<memory_piece>(n);
+          if (mp->is_recall(ctx)) {
+            shift_val += mp->get_full_size() - mp->get_payload_size();
+            mp->set_flag(type_flags::full_processed);
+            if (ok.first == n->get_object_id() && ok.second == ctx)
+              finally = true;
+          } else {
+            mp->set_shift(shift_val);
+            if ((std::strcmp(memory_name.data(), n->get_name().data()) == 0)) {
+              ok.first = n->get_object_id();
+              ok.second = ctx;
+            }
+            if (n->check_flag(type_flags::memory_group)) {
+              if ((ok.first == n->get_object_id() && ok.second == ctx) &&
+                  flags.check_flag(dependence_flags::shift))
+                finally = true;
+              else
+                n->bind_recall(ctx);
+            } else {
+              shift_val += mp->get_full_size();
+              if (ok.first == n->get_object_id() && ok.second == ctx)
+                finally = true;
+            }
+          }
+          if (finally) {
+            getter(mp);
+            return true;
+          }
+        }
+        return false;
+      },
+      {bypass_flags::self, bypass_flags::childs},
+      global::cs.generate_unique_number("ctx"));
 }
 
 void build_root::duplicate_guard(std::string current_name) {
@@ -712,6 +719,8 @@ void build_root::add_address(std::string addr_name, std::string memory_name,
     dl->set_flag(type_flags::memory_top);
   dl->set_name(addr_name);
   dl->set_resolver([this, dl, base]() {
+    dl->set_flag(type_flags::ignore);
+    DEFER(dl->unset_flag(type_flags::ignore););
     std::vector<uint8_t> address;
     if (this->get_state() >= build_states::translating) {
       std::uint64_t shift = 0;
@@ -739,7 +748,11 @@ void build_root::add_processed_data(
       current_node->check_flag(type_flags::build_branch))
     dl->set_flag(type_flags::memory_top);
   dl->set_name(data_name);
-  dl->set_resolver([this, dl, processor]() { processor(this, dl); });
+  dl->set_resolver([this, dl, processor]() {
+    dl->set_flag(type_flags::ignore);
+    DEFER(dl->unset_flag(type_flags::ignore););
+    processor(this, dl);
+  });
 }
 
 std::string build_root::to_string() {
@@ -784,7 +797,7 @@ part *build_root::dd(std::string begin_name, std::string end_name) {
     auto p = node_cast<cached_dependence>(cp);
     if (p->check_flag(type_flags::node_cached)) return p->get_cached_value();
     if (this->get_state() >= build_states::translating) {
-      LOOP_STUB
+      PART_LOOP_STUB
       std::uint64_t begin = 0, end = 0;
       this->get_depended_memory(
           p->get_name_by_index(0),
@@ -884,12 +897,14 @@ part *build_root::shd(std::string memory_name) {
     auto p = node_cast<cached_dependence>(cp);
     if (p->check_flag(type_flags::node_cached)) return p->get_cached_value();
     if (this->get_state() >= build_states::translating) {
-      LOOP_STUB
+      PART_LOOP_STUB
       std::uint64_t shift = 0;
-      this->get_depended_memory(
-          p->get_name_by_index(0),
-          [&shift](memory_piece *mp) { shift = mp->get_shift(); },
-          {dependence_flags::shift});
+      this->get_depended_memory(p->get_name_by_index(0),
+                                [&shift](memory_piece *mp) {
+                                  shift = mp->get_shift();
+                                  if (shift == 0) printf("%s\n", "shit");
+                                },
+                                {dependence_flags::shift});
       p->set_cached_value(shift);
       return p->get_cached_value();
     }
@@ -904,7 +919,7 @@ part *build_root::fszd(std::string memory_name) {
     auto p = node_cast<cached_dependence>(cp);
     if (p->check_flag(type_flags::node_cached)) return p->get_cached_value();
     if (this->get_state() >= build_states::translating) {
-      LOOP_STUB
+      PART_LOOP_STUB
       std::uint64_t full_size = 0;
       this->get_depended_memory(
           p->get_name_by_index(0),
@@ -924,7 +939,7 @@ part *build_root::pszd(std::string memory_name) {
     auto p = node_cast<cached_dependence>(cp);
     if (p->check_flag(type_flags::node_cached)) return p->get_cached_value();
     if (this->get_state() >= build_states::translating) {
-      LOOP_STUB
+      PART_LOOP_STUB
       std::uint64_t payload_size = 0;
       this->get_depended_memory(p->get_name_by_index(0),
                                 [&payload_size](memory_piece *mp) {
@@ -980,7 +995,7 @@ part *build_root::c32d(std::string memory_name, global::flag_container flags) {
     auto p = node_cast<cached_dependence>(cp);
     if (p->check_flag(type_flags::node_cached)) return p->get_cached_value();
     if (this->get_state() >= build_states::translating) {
-      LOOP_STUB
+      PART_LOOP_STUB
       std::uint64_t crc32 = 0;
       this->get_depended_memory(
           p->get_name_by_index(0),
@@ -1004,7 +1019,7 @@ part *build_root::c64d(std::string memory_name, global::flag_container flags) {
     auto p = node_cast<cached_dependence>(cp);
     if (p->check_flag(type_flags::node_cached)) return p->get_cached_value();
     if (this->get_state() >= build_states::translating) {
-      LOOP_STUB
+      PART_LOOP_STUB
       std::uint64_t crc64 = 0;
       this->get_depended_memory(p->get_name_by_index(0),
                                 [&crc64, &flags](memory_piece *mp) {

@@ -50,6 +50,7 @@ class pe32_i686 : public base_mk {
   std::uint32_t get_GetProcAddress_hash();
   std::uint32_t get_ExitProcess_hash();
   std::uint32_t get_VirtualProtect_hash();
+  void init_traps();
 
  public:
   pe32_i686();

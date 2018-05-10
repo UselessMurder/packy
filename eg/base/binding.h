@@ -87,7 +87,7 @@ enum nf : std::uint8_t {
   debug_unprotected = 30,
   will_balanced = 31,
   do_not_use_shift = 32,
-  shift_is_set = 33
+  full_processed = 33
 };
 }
 
@@ -165,24 +165,6 @@ T *get_current_node(node *n) {
 }
 
 template <typename T>
-T *find_node_by_name(node *current_node, std::string name,
-                     global::flag_container search_flags) {
-  node *n;
-  bool ok = current_node->run_functor(
-      [&n, &name](node *current_node, std::uint64_t ctx) -> bool {
-        if (std::strcmp(name.data(), current_node->get_name().data()) == 0) {
-          n = current_node;
-          return true;
-        }
-        return false;
-      },
-      search_flags, global::cs.generate_unique_number("ctx"));
-  if (!ok) throw std::domain_error("Cant`t find node by name: " + name);
-
-  return node_cast<T>(n);
-}
-
-template <typename T>
 T *find_node_by_flag(node *current_node, std::uint8_t node_flag,
                      global::flag_container search_flags) {
   node *n;
@@ -235,9 +217,45 @@ class current_cache {
   node *get_current();
 };
 
+class name_cache {
+private:
+  std::map<std::string, node*> named_nodes;
+
+public:
+  name_cache();
+  ~name_cache();
+
+  void set_node_name(std::string name, node *current_node);
+  node *get_node_by_name(std::string name);
+  void cleanup();
+};
+
 #ifdef USE_CACHE
-extern current_cache global_cache;
+extern name_cache global_name_cache;
+extern node *global_root;
 #endif
+
+template <typename T>
+T *find_node_by_name(node *current_node, std::string name,
+                     global::flag_container search_flags) {
+  #ifdef USE_CACHE
+    return node_cast<T>(global_name_cache.get_node_by_name(name));
+  #elif
+  node *n;
+  bool ok = current_node->run_functor(
+      [&n, &name](node *current_node, std::uint64_t ctx) -> bool {
+        if (std::strcmp(name.data(), current_node->get_name().data()) == 0) {
+          n = current_node;
+          return true;
+        }
+        return false;
+      },
+      search_flags, global::cs.generate_unique_number("ctx"));
+  if (!ok) throw std::domain_error("Cant`t find node by name: " + name);
+
+  return node_cast<T>(n);
+ #endif
+}
 
 class loop_guard {
  private:

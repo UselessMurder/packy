@@ -10,7 +10,15 @@ class base_mk {
  protected:
   fs::out_file *file;
   ld::base_ld *loader;
-
+  std::map<std::string, std::function<void(std::map<std::string, std::any> &values)>> traps;
+  std::map<std::string, std::map<std::string, std::any>> traps_params;
+  std::set<std::string> rand_traps;
+  void add_trap(std::string trap_name, std::function<void(std::map<std::string, std::any> &values)> trap_code);
+  void insert_trap(std::string name);
+  void add_param_to_trap(std::string trap_name, std::string param_name, std::any value);
+  void set_trap_random(std::string trap_name);
+  void insert_random_trap();
+  virtual void init_traps() = 0;
  public:
   base_mk();
   base_mk(fs::out_file *out_file);

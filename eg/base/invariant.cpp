@@ -1,4 +1,5 @@
-// This is an open source non-commercial project. Dear PVS-Studio, please check it.
+// This is an open source non-commercial project. Dear PVS-Studio, please check
+// it.
 
 // PVS-Studio Static Code Analyzer for C, C++ and C#: http://www.viva64.com
 
@@ -46,8 +47,13 @@ void invariant::register_balancer(
 }
 
 void invariant::validate_variables(std::map<std::string, part *> *vars) {
+#ifdef USE_CACHE
+  build_root *root = node_cast<build_root>(global_root);
+#elif
   build_root *root = find_node_by_flag<build_root>(this, type_flags::build_root,
                                                    {bypass_flags::parents});
+#endif
+
   for (auto v : variables) {
     if (!root->validate_bitness(get_part_value<std::uint64_t>((*vars)[v.first]),
                                 v.second))
@@ -59,8 +65,13 @@ void invariant::validate_variables(std::map<std::string, part *> *vars) {
 
 bool invariant::try_execute(global::flag_container fl,
                             std::vector<part *> *args) {
+#ifdef USE_CACHE
+  build_root *root = node_cast<build_root>(global_root);
+#elif
   build_root *root = find_node_by_flag<build_root>(this, type_flags::build_root,
                                                    {bypass_flags::parents});
+#endif
+
   global::named_defer recursion_guard;
 
   auto args_template = find_node_by_flag<form>(this, type_flags::build_form,
@@ -110,7 +121,6 @@ bool invariant::try_execute(global::flag_container fl,
   }
 
   node *current = get_current_node<node>(root->get_build_node());
-
 
   if (!current->check_flag(type_flags::memory_group))
     throw std::domain_error("Instruction can be located only in group");

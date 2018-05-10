@@ -1,4 +1,5 @@
-// This is an open source non-commercial project. Dear PVS-Studio, please check it.
+// This is an open source non-commercial project. Dear PVS-Studio, please check
+// it.
 
 // PVS-Studio Static Code Analyzer for C, C++ and C#: http://www.viva64.com
 
@@ -21,13 +22,10 @@ void memory_piece::set_align(std::uint64_t current_align) {
 }
 
 void memory_piece::set_shift(std::uint64_t current_shift) {
-  set_flag(type_flags::shift_is_set);
   shift = current_shift;
 }
 
-std::uint64_t memory_piece::get_shift() {
-  return shift; 
-}
+std::uint64_t memory_piece::get_shift() { return shift; }
 
 std::uint64_t memory_piece::get_full_size() { return size + overhead; }
 
@@ -51,15 +49,20 @@ std::uint64_t group::get_payload_size() {
 }
 
 void group::resize_decorator(std::uint8_t build_code) {
+#ifdef USE_CACHE
+  build_root *root = node_cast<build_root>(global_root);
+#elif
   build_root *root = find_node_by_flag<build_root>(this, type_flags::build_root,
                                                    {bypass_flags::parents});
+#endif
+
   resize(root);
 }
 
 void group::resize(node *root) {
   build_root *br = dynamic_cast<build_root *>(root);
 
-  if(br == reinterpret_cast<build_root*>(0))
+  if (br == reinterpret_cast<build_root *>(0))
     throw std::domain_error("Invalid root pointer");
 
   if (br->get_state() > self_state) {
@@ -71,9 +74,13 @@ void group::resize(node *root) {
     }
 
     if (br->get_state() > build_states::locating && size < current_size &&
-        check_flag(type_flags::fixed))
+        check_flag(type_flags::fixed)) {
+      printf("%s\n", name.c_str());
+      printf("%ld %ld %ld \n", size, overhead, current_size);
+      printf("%s\n", this->to_string().c_str());
       throw std::domain_error("Size more wan align size, id: " +
                               std::to_string(get_object_id()));
+    }
 
     if (br->get_state() > build_states::locating &&
         (current_size != size + overhead) && check_flag(type_flags::fixed)) {
@@ -82,19 +89,14 @@ void group::resize(node *root) {
     } else
       size = current_size;
 
-    if (align_value != 1)
-      global::align(size, overhead, align_value);
-
-    if(br->get_state() >= build_states::translating && !check_flag(type_flags::shift_is_set))
-      return;
+    if (align_value != 1) global::align(size, overhead, align_value);
 
     self_state = br->get_state();
   }
 }
 
 void group::check_static() {
-  if (check_flag(type_flags::group_taged))
-    return;
+  if (check_flag(type_flags::group_taged)) return;
 
   if (align_value == 1) {
     bool ok = run_functor(
@@ -109,8 +111,7 @@ void group::check_static() {
         },
         {bypass_flags::childs}, global::cs.generate_unique_number("ctx"));
 
-    if (!ok)
-      set_flag(type_flags::memory_static);
+    if (!ok) set_flag(type_flags::memory_static);
   }
 
   set_flag(type_flags::group_taged);
@@ -146,8 +147,12 @@ void group::get_content(std::vector<std::uint8_t> *content,
     }
   }
 
+#ifdef USE_CACHE
+  build_root *root = node_cast<build_root>(global_root);
+#elif
   build_root *root = find_node_by_flag<build_root>(this, type_flags::build_root,
                                                    {bypass_flags::parents});
+#endif
 
   if (overhead != 0) {
     if (overhead > overhead_content.size()) {
@@ -199,20 +204,28 @@ activation_group::activation_group(node *parent, invariant *second_parent)
 activation_group::~activation_group() {}
 
 void activation_group::set_shift(std::uint64_t current_shift) {
+#ifdef USE_CACHE
+  build_root *root = node_cast<build_root>(global_root);
+#elif
   build_root *root = find_node_by_flag<build_root>(this, type_flags::build_root,
                                                    {bypass_flags::parents});
+#endif
+
   run_balancer(root);
 }
 
 void activation_group::resize_decorator(std::uint8_t build_code) {
+#ifdef USE_CACHE
+  build_root *root = node_cast<build_root>(global_root);
+#elif
   build_root *root = find_node_by_flag<build_root>(this, type_flags::build_root,
                                                    {bypass_flags::parents});
+#endif
 
   if (check_flag(type_flags::ignore)) {
     if (build_code == 2)
       throw std::domain_error("Cant`t ignore content request!");
-    if (root->get_state() >= build_states::translating)
-      return;
+    if (root->get_state() >= build_states::translating) return;
   }
 
   run_balancer(root);
@@ -225,8 +238,7 @@ void activation_group::run_balancer(node *root) {
       form *f = find_node_by_flag<form>(adoptive_parent, type_flags::build_form,
                                         {bypass_flags::parents});
       f->validate_arguments(&variables);
-      if (!balancer)
-        return;
+      if (!balancer) return;
       balancer(&variables);
       adoptive_parent->validate_variables(&variables);
       set_flag(type_flags::balanced);
@@ -254,34 +266,33 @@ void code_line::set_assembly(std::string current_assembly_name) {
 }
 
 void code_line::rebuild(std::uint8_t build_code) {
+#ifdef USE_CACHE
+  build_root *root = node_cast<build_root>(global_root);
+#elif
   build_root *root = find_node_by_flag<build_root>(this, type_flags::build_root,
                                                    {bypass_flags::parents});
+#endif
   if (self_state < root->get_state()) {
-
     if (check_flag(type_flags::ignore)) {
       if (build_code == 2)
         throw std::domain_error("Cant`t ignore content request!");
-      if (root->get_state() >= build_states::translating)
-        return;
+      if (root->get_state() >= build_states::translating) return;
     }
 
     std::stringstream ss;
     code.clear();
 
     for (auto ch : childs)
-     if (ch->check_flag(type_flags::build_part))
+      if (ch->check_flag(type_flags::build_part))
         ss << node_cast<part>(ch)->to_string();
 
-    if(check_flag(type_flags::do_not_use_shift))
+    if (check_flag(type_flags::do_not_use_shift))
       root->assembly(&code, ss.str(), assembler_name, 0);
     else
       root->assembly(&code, ss.str(), assembler_name, shift);
     size = code.size();
-    if (align_value != 1)
-      global::align(size, overhead, align_value);
-
-    if(root->get_state() >= build_states::translating && !check_flag(type_flags::shift_is_set))
-      return;
+    if (align_value != 1) global::align(size, overhead, align_value);
+    
     self_state = root->get_state();
   }
 }
@@ -297,7 +308,7 @@ std::uint64_t code_line::get_payload_size() {
 }
 
 void code_line::append_part(part *current_part) {
-    current_part->set_parent(this);
+  current_part->set_parent(this);
 }
 
 void code_line::get_content(std::vector<std::uint8_t> *content,
@@ -306,8 +317,12 @@ void code_line::get_content(std::vector<std::uint8_t> *content,
   std::vector<std::uint8_t> tmp;
   tmp.insert(tmp.end(), code.begin(), code.end());
 
+#ifdef USE_CACHE
+  build_root *root = node_cast<build_root>(global_root);
+#elif
   build_root *root = find_node_by_flag<build_root>(this, type_flags::build_root,
                                                    {bypass_flags::parents});
+#endif
 
   if (overhead != 0) {
     for (std::uint64_t i = 0; i < overhead; i++)
@@ -345,23 +360,27 @@ data_line::data_line(node *parent) : memory_piece(parent) {
 
 data_line::~data_line() {}
 
-void data_line::prepare() {
+void data_line::prepare(std::uint8_t build_code) {
+#ifdef USE_CACHE
+  build_root *root = node_cast<build_root>(global_root);
+#elif
   build_root *root = find_node_by_flag<build_root>(this, type_flags::build_root,
                                                    {bypass_flags::parents});
+#endif
+
   if (self_state < root->get_state()) {
     size = data.size();
-    if (align_value != 1)
-      global::align(size, overhead, align_value);
+    if (align_value != 1) global::align(size, overhead, align_value);
     self_state = root->get_state();
   }
 }
 
 std::uint64_t data_line::get_full_size() {
-  prepare();
+  prepare(0);
   return size + overhead;
 }
 std::uint64_t data_line::get_payload_size() {
-  prepare();
+  prepare(1);
   return size;
 }
 void data_line::set_content(std::vector<std::uint8_t> *content) {
@@ -375,14 +394,18 @@ void data_line::resize(std::uint64_t current_size) {
 
 void data_line::get_content(std::vector<std::uint8_t> *content,
                             global::flag_container flags) {
-  prepare();
+  prepare(2);
 
   std::vector<std::uint8_t> tmp;
 
   tmp.insert(tmp.end(), data.begin(), data.end());
 
+#ifdef USE_CACHE
+  build_root *root = node_cast<build_root>(global_root);
+#elif
   build_root *root = find_node_by_flag<build_root>(this, type_flags::build_root,
                                                    {bypass_flags::parents});
+#endif
 
   if (overhead != 0) {
     if (overhead > overhead_content.size()) {
@@ -412,8 +435,7 @@ std::string data_line::to_string() {
      << std::to_string(get_object_id()) << ")"
      << ": ";
 
-  for (auto b : data)
-    ss << std::hex << std::uint32_t(b);
+  for (auto b : data) ss << std::hex << std::uint32_t(b);
   ss << "\n";
   return ss.str();
 }
@@ -421,10 +443,21 @@ std::string data_line::to_string() {
 dependence_line::dependence_line(node *parent, std::vector<std::string> names)
     : data_line(parent), string_container(names) {
   set_flag(type_flags::dependence);
-  set_flag(type_flags::memory_static);
 }
 
-void dependence_line::prepare() {
+void dependence_line::prepare(std::uint8_t build_code) {
+#ifdef USE_CACHE
+  build_root *root = node_cast<build_root>(global_root);
+#elif
+  build_root *root = find_node_by_flag<build_root>(this, type_flags::build_root,
+                                                   {bypass_flags::parents});
+#endif
+
+  if (check_flag(type_flags::ignore)) {
+    if (build_code == 2)
+      throw std::domain_error("Cant`t ignore content request!");
+    if (root->get_state() >= build_states::translating) return;
+  }
 
   if (!check_flag(type_flags::node_cached)) {
     if (!resolver)
@@ -433,12 +466,9 @@ void dependence_line::prepare() {
     resolver();
   }
 
-  build_root *root = find_node_by_flag<build_root>(this, type_flags::build_root,
-                                                   {bypass_flags::parents});
   if (self_state < root->get_state()) {
     size = data.size();
-    if (align_value != 1)
-      global::align(size, overhead, align_value);
+    if (align_value != 1) global::align(size, overhead, align_value);
     self_state = root->get_state();
   }
 }
@@ -449,4 +479,4 @@ void dependence_line::set_resolver(std::function<void()> current_resolver) {
   resolver = current_resolver;
 }
 
-} // namespace eg
+}  // namespace eg

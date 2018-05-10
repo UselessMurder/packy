@@ -100,6 +100,10 @@ std::uint32_t pe32_i686::get_VirtualProtect_hash() {
   return result;
 }
 
+void pe32_i686::init_traps() {
+
+}
+
 void pe32_i686::end_init_code() {
   e.enable_alter("way_out", "out_key", "byte_ecb");
   e.start_segment("way_out");
@@ -488,23 +492,35 @@ void pe32_i686::build_import_stub() {
 }
 
 void pe32_i686::build_reloc_stub() {
+  uint64_t r_count = 0;
   e.start_segment("reloc");
   e.bf("D", "common");
   e.bsp("ebp_", eg::i8086::ebp);
   e.f("mov_rd_smd", e.g("D"), e.g("ebp_"), "-", e.vshd("base"));
   e.f("sub_rd_vd", e.g("D"),
       std::uint64_t(get_ld()->get_optional_header()->image_base));
-  e.fr("ebp_");
   auto relocs = get_ld()->get_relocations();
-  for (auto r : (*relocs)) {
+  if (relocs->size() == 0)
+    e.f("jump", e.shd("tls_stub"));
+  else
+    e.f("jump", e.shd("tune_reloc_" + std::to_string(r_count)));
+  e.end();
+  e.fr("ebp_");
+  for (uint64_t i = 0; i < relocs->size(); i++) {
+    auto r = (*relocs)[i];
+    e.start_segment("tune_reloc_" + std::to_string(r_count));
+    r_count++;
     e.bf("tmp", "common");
     e.f("abs_r", e.g("tmp"), std::uint64_t(r));
     e.f("add_md_rd", e.g("tmp"), e.g("D"));
     e.fr("tmp");
+    if (i != (relocs->size() - 1))
+      e.f("jump", e.shd("tune_reloc_" + std::to_string(r_count)));
+    else
+      e.f("jump", e.shd("tls_stub"));
+    e.end();
   }
   e.fr("D");
-  e.f("jump", e.shd("tls_stub"));
-  e.end();
 }
 
 void pe32_i686::build_tls_stub() {
@@ -955,8 +971,14 @@ void pe32_i686::build_mprotect_stub() {
   e.bsp("ebp_", eg::i8086::ebp);
   e.bf("trash", "common");
   e.f("lea_rd_smd", e.g("trash"), e.g("ebp_"), "-", e.vshd("trash_ptr"));
+  uint32_t s_counter = 0;
+  e.f("jump", e.shd("s_right_set_" + std::to_string(s_counter)));
+  e.end();
+
   if (get_ld()->is_nx_compatible()) {
     for (std::uint64_t i = 0; i < get_ld()->get_sections_count(); i++) {
+      e.start_segment("s_right_set_" + std::to_string(s_counter));
+      s_counter++;
       e.bf("beg", "common");
       e.push_registers({e.g("trash")});
       e.f("push_rd", e.g("trash"));
@@ -969,8 +991,12 @@ void pe32_i686::build_mprotect_stub() {
       e.f("call_smd", e.g("ebp_"), "-", e.vshd("VirtualProtect"));
       e.pop_registers({e.g("trash")});
       e.fr("beg");
+      e.f("jump", e.shd("s_right_set_" + std::to_string(s_counter)));
+      e.end();
     }
   }
+  e.start_segment("s_right_set_" + std::to_string(s_counter));
+  s_counter++;
   e.bf("beg", "common");
   e.f("abs_r", e.g("beg"), get_ld()->get_begin_of_stub());
   e.push_registers({e.g("trash")});
@@ -1093,8 +1119,11 @@ std::uint32_t pe32_i686::build_code(std::vector<std::uint8_t> *stub,
 
   e.start_segment("set_base");
   e.bsp("esp_", eg::i8086::esp);
+  e.bsp("ebp_", eg::i8086::ebp);
+  e.f(e.gg({"fu"}), "mov_rd_rd", e.g("ebp_"), e.g("esp_"));
   e.f(e.gg({"fu"}), "sub_rd_vd", e.g("esp_"), e.frszd());
   e.fr("esp_");
+  e.fr("ebp_");
   e.bf("shift", "common");
   if (global::rc.generate_random_number() % 2 == 0 || get_ld()->is_dll()) {
     auto seg1 = global::cs.generate_unique_string("usegment");
@@ -1116,7 +1145,55 @@ std::uint32_t pe32_i686::build_code(std::vector<std::uint8_t> *stub,
   }
   e.f(e.gg({"fu"}), "store_rd", e.vshd("base"), e.g("shift"));
   e.fr("shift");
+  e.f("jump", e.shd("check_begin_break"));
+  e.end();
 
+  e.start_segment("clear_exit");
+  e.bsp("esp_", eg::i8086::esp);
+  e.f("add_rd_vd", e.g("esp_"), e.frszd());
+  e.fr("esp_");
+  e.f("ret");
+  e.end();
+
+  e.enable_alter("image", "some_key", "aes");
+  e.add_key("some_key");
+  e.enable_alter("decrypt_paramount_key", "third_rate_key", "byte_ecb");
+  e.enable_alter("some_key", "secondary_key", "dword_ecb");
+
+  e.start_segment("check_begin_break");
+  e.f("store_abs", e.vshd("target"), e.shd("begin"));
+  e.f("store_vd", e.vshd("count"), e.fszd("begin"));
+  e.f("store_vb", e.vshd("crc_switch"), std::uint64_t(0));
+  e.f("invoke", e.shd("crc"));
+  e.bs("tmp_1", "common");
+  e.bs("tmp_2", "common");
+  e.push_registers({e.g("tmp_1"), e.g("tmp_2")});
+  e.f("load_rd", e.g("tmp_2"), e.vshd("result"));
+  e.f("mov_rd_vd", e.g("tmp_1"), e.c32d("begin", {}));
+  e.f("cmp_rd_rd", e.g("tmp_1"), e.g("tmp_2"));
+  e.pop_registers({e.g("tmp_1"), e.g("tmp_2")});
+  e.fr("tmp_1");
+  e.fr("tmp_2");
+  e.f("branch", "e", e.shd("decrypt_secondary_key"), e.shd("clear_exit"));
+  e.end();
+
+  e.start_segment("decrypt_secondary_key");
+  e.f("store_abs", e.vshd("target"), e.shd("decrypt_paramount_key"));
+  e.f("store_vd", e.vshd("count"), e.fszd("decrypt_paramount_key"));
+  e.f("store_vb", e.vshd("byte_key"), e.kd("third_rate_key", 8, 0));
+  e.f("invoke", e.shd("alter_b"));
+  e.f("jump", e.shd("decrypt_paramount_key"));
+  e.end();
+
+  e.start_segment("decrypt_paramount_key");
+  e.f("store_abs", e.vshd("target"), e.shd("some_key"));
+  e.f("store_vd", e.vshd("count"), e.fszd("some_key"));
+  e.f("store_vd", e.vshd("dword_key"), e.kd("secondary_key", 32, 0));
+  e.f("invoke", e.shd("alter_d"));
+  e.f("jump", e.shd("unpack_image"));
+  e.end();
+
+  e.start_segment("unpack_image");
   e.f("store_abs", e.vshd("target"), e.shd("image"));
   e.f("store_vd", e.vshd("count"), e.fszd("image"));
   e.f("store_abs", e.vshd("key_addr"), e.shd("some_key"));
@@ -1124,7 +1201,10 @@ std::uint32_t pe32_i686::build_code(std::vector<std::uint8_t> *stub,
   e.f("store_abs", e.vshd("target"), e.shd("image"));
   e.f("store_abs", e.vshd("value"), get_ld()->get_real_image_begin());
   e.f("invoke", e.shd("uncompress"));
+  e.f("jump", e.shd("load_api"));
+  e.end();
 
+  e.start_segment("load_api");
   e.f("store_rd", e.vshd("hash"), std::uint64_t(get_LoadLibrary_hash()));
   e.f("invoke", e.shd("get_apix"));
   e.bf("tmp", "common");
@@ -1161,11 +1241,7 @@ std::uint32_t pe32_i686::build_code(std::vector<std::uint8_t> *stub,
   e.fr("tmp");
 
   e.f("jump", e.shd("import"));
-
   e.end();
-
-  e.enable_alter("image", "some_key", "aes");
-  e.add_key("some_key");
 
   e.end();
 

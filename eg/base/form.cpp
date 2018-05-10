@@ -1,4 +1,5 @@
-// This is an open source non-commercial project. Dear PVS-Studio, please check it.
+// This is an open source non-commercial project. Dear PVS-Studio, please check
+// it.
 
 // PVS-Studio Static Code Analyzer for C, C++ and C#: http://www.viva64.com
 
@@ -34,10 +35,16 @@ std::vector<std::pair<std::string, std::uint32_t>> *form::get_arguments() {
 }
 
 void form::validate_arguments(std::map<std::string, part *> *args) {
-  build_root *root =
-      find_node_by_flag<build_root>(this, type_flags::build_root, {bypass_flags::parents});
+#ifdef USE_CACHE
+  build_root *root = node_cast<build_root>(global_root);
+#elif
+  build_root *root = find_node_by_flag<build_root>(this, type_flags::build_root,
+                                                   {bypass_flags::parents});
+#endif
+
   for (auto a : arguments) {
-    if (a.second != 0  && !root->validate_bitness(get_part_value<std::uint64_t>((*args)[a.first]),
+    if (a.second != 0 &&
+        !root->validate_bitness(get_part_value<std::uint64_t>((*args)[a.first]),
                                 a.second))
       throw std::invalid_argument(
           "Invalid bytness of argument with name: " + a.first +
@@ -53,4 +60,4 @@ void form::get_invariants(std::vector<invariant *> *invariants) {
   }
 }
 
-} // namespace eg
+}  // namespace eg
