@@ -47,12 +47,16 @@ class pe32_i686 : public base_mk {
   void build_export();
 
   std::uint32_t get_KERNEL32_hash();
+  std::uint32_t get_NTDLL_hash();
   std::uint32_t get_LoadLibrary_hash();
   std::uint32_t get_GetModuleHandle_hash();
   std::uint32_t get_GetProcAddress_hash();
   std::uint32_t get_ExitProcess_hash();
   std::uint32_t get_VirtualProtect_hash();
   std::uint32_t get_GetVersionEx_hash();
+  std::uint32_t get_NtQueryInformationProcess_hash();
+  std::uint32_t get_GetThreadContext_hash();
+  std::uint32_t get_SetThreadContext_hash();
   void init_traps();
 
  public:

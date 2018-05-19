@@ -116,7 +116,7 @@ void i686::init_state() {
 void i686::init_crc() {
   start_segment("crc");
   bf("target", "common");
-  bss("ebp_", ebp);
+  bsp("ebp_", ebp);
   f("load_rd", g("target"), vshd("target"));
   bf("result", "base");
   bf("accum", "base");
@@ -381,7 +381,7 @@ void i686::init_aes() {
   f("add_rd_vd", g("cr_ptr"), std::uint64_t(28));
   bf("counter", "base");
   f("mov_rd_vd", g("counter"), std::uint64_t(8));
-  bss("ebp_", ebp);
+  bsp("ebp_", ebp);
   f("mov_smb_vb", g("ebp_"), "-", vshd("bus_byte"), std::uint64_t(0));
   fr("ebp_");
   f("jump", shd("aes_expand_key_expand"));
@@ -402,7 +402,7 @@ void i686::init_aes() {
   f("invoke", shd("aes_sub_word"));
   f("invoke", shd("aes_rconx"));
   pop_registers({g("counter"), g("bg_ptr"), g("cr_ptr")});
-  bss("ebp_", ebp);
+  bsp("ebp_", ebp);
   f("add_smb_vb", g("ebp_"), "-", vshd("bus_byte"), std::uint64_t(1));
   fr("ebp_");
   f("jump", shd("aes_expand_key_next"));
@@ -707,8 +707,8 @@ void i686::init_aes() {
 
   // aes inv_mix_columns begin
   start_segment("aes_inv_mix_columns");
-  bss("esp_", esp);
-  bss("ebp_", ebp);
+  bsp("esp_", esp);
+  bsp("ebp_", ebp);
   f("sub_rd_vd", g("esp_"), std::uint64_t(16));
   bf("nast", "common");
   f("lea_rd_md", g("nast"), g("esp_"));
@@ -1382,6 +1382,15 @@ void i686::init_invariants() {
   form *cf = reinterpret_cast<eg::form *>(0);
   invariant *iv = reinterpret_cast<eg::invariant *>(0);
 
+  // nop begin
+
+  cf = make_form("nop");
+  iv = make_invariant(cf);
+  iv->copy_flags(gg({"ss", "fs", "up", "fu"}));
+  iv->PROGRAMMER(EG->t(CAST, "nop"););
+
+  // nop end
+
   // load begin
 
   // load_rd begin
@@ -1391,10 +1400,11 @@ void i686::init_invariants() {
 
   iv = make_invariant(cf);
   iv->copy_flags(gg({"ss", "fs", "up", "fu"}));
-  iv->PROGRAMMER(auto ebp_ = global::cs.generate_unique_string("pr_regs");
-                 EG->bss(ebp_, ebp); EG->f(fl, "mov_rd_smd", VARS["r"],
-                                           EG->g(ebp_), "-", VARS["a"]);
-                 EG->fr(ebp_););
+  iv->PROGRAMMER(
+      auto ebp_ = global::cs.generate_unique_string("pr_regs");
+      EG->bss(ebp_, ebp, global::cs.generate_unique_number("fctx"));
+      EG->f(fl, "mov_rd_smd", VARS["r"], EG->g(ebp_), "-", VARS["a"]);
+      EG->fr(ebp_););
   // load_rd end
 
   // load_rb begin
@@ -1404,10 +1414,11 @@ void i686::init_invariants() {
 
   iv = make_invariant(cf);
   iv->copy_flags(gg({"ss", "fs", "up", "fu"}));
-  iv->PROGRAMMER(auto ebp_ = global::cs.generate_unique_string("pr_regs");
-                 EG->bss(ebp_, ebp); EG->f(fl, "mov_rb_smb", VARS["r"],
-                                           EG->g(ebp_), "-", VARS["a"]);
-                 EG->fr(ebp_););
+  iv->PROGRAMMER(
+      auto ebp_ = global::cs.generate_unique_string("pr_regs");
+      EG->bss(ebp_, ebp, global::cs.generate_unique_number("fctx"));
+      EG->f(fl, "mov_rb_smb", VARS["r"], EG->g(ebp_), "-", VARS["a"]);
+      EG->fr(ebp_););
   // load_rb end
 
   // load end
@@ -1422,19 +1433,20 @@ void i686::init_invariants() {
   iv = make_invariant(cf);
   iv->copy_flags(gg({"ss", "fs", "up", "fu"}));
   iv->add_register("r", "common");
-  iv->PROGRAMMER(
-      auto ebp_ = global::cs.generate_unique_string("pr_regs");
-      EG->bss(ebp_, ebp); EG->f(fl, "abs_r", VARS["r"], VARS["a2"]);
-      EG->f(fl, "mov_smd_rd", EG->g(ebp_), "-", VARS["a1"], VARS["r"]);
-      EG->fr(ebp_););
+  iv->PROGRAMMER(auto ebp_ = global::cs.generate_unique_string("pr_regs");
+                 EG->bss(ebp_, ebp, global::cs.generate_unique_number("fctx"));
+                 EG->f(fl, "abs_r", VARS["r"], VARS["a2"]); EG->f(
+                     fl, "mov_smd_rd", EG->g(ebp_), "-", VARS["a1"], VARS["r"]);
+                 EG->fr(ebp_););
 
   iv = make_invariant(cf);
   iv->copy_flags(gg({"fs", "up", "fu"}));
   iv->PROGRAMMER(
       auto ebp_ = global::cs.generate_unique_string("pr_regs");
       auto reg_ = global::cs.generate_unique_string("pr_regs");
-      EG->bs(reg_, "common"); EG->f(fl, "push_rd", EG->g(reg_));
-      EG->bss(ebp_, ebp); EG->f(fl, "abs_r", EG->g(reg_), VARS["a2"]);
+      auto fctx = global::cs.generate_unique_number("fctx");
+      EG->bs(reg_, "common", fctx); EG->f(fl, "push_rd", EG->g(reg_));
+      EG->bss(ebp_, ebp, fctx); EG->f(fl, "abs_r", EG->g(reg_), VARS["a2"]);
       EG->f(fl, "mov_smd_rd", EG->g(ebp_), "-", VARS["a1"], EG->g(reg_));
       EG->f(fl, "pop_rd", EG->g(reg_)); EG->fr(reg_); EG->fr(ebp_););
   // store_abs
@@ -1447,7 +1459,7 @@ void i686::init_invariants() {
   iv = make_invariant(cf);
   iv->copy_flags(gg({"ss", "fs", "up", "fu"}));
   iv->PROGRAMMER(auto ebp_ = global::cs.generate_unique_string("pr_regs");
-                 EG->bss(ebp_, ebp); EG->f(fl, "mov_smd_rd", EG->g(ebp_), "-",
+                 EG->bss(ebp_, ebp, global::cs.generate_unique_number("fctx")); EG->f(fl, "mov_smd_rd", EG->g(ebp_), "-",
                                            VARS["a"], VARS["r"]);
                  EG->fr(ebp_););
   // store_rd end
@@ -1459,10 +1471,11 @@ void i686::init_invariants() {
 
   iv = make_invariant(cf);
   iv->copy_flags(gg({"ss", "fs", "up", "fu"}));
-  iv->PROGRAMMER(auto ebp_ = global::cs.generate_unique_string("pr_regs");
-                 EG->bss(ebp_, ebp); EG->f(fl, "mov_smb_rb", EG->g(ebp_), "-",
-                                           VARS["a"], VARS["r"]);
-                 EG->fr(ebp_););
+  iv->PROGRAMMER(
+      auto ebp_ = global::cs.generate_unique_string("pr_regs");
+      EG->bss(ebp_, ebp, global::cs.generate_unique_number("fctx"));
+      EG->f(fl, "mov_smb_rb", EG->g(ebp_), "-", VARS["a"], VARS["r"]);
+      EG->fr(ebp_););
   // store_rb end
 
   // store_vd begin
@@ -1472,10 +1485,11 @@ void i686::init_invariants() {
 
   iv = make_invariant(cf);
   iv->copy_flags(gg({"ss", "fs", "up", "fu"}));
-  iv->PROGRAMMER(auto ebp_ = global::cs.generate_unique_string("pr_regs");
-                 EG->bss(ebp_, ebp); EG->f(fl, "mov_smd_vd", EG->g(ebp_), "-",
-                                           VARS["a1"], VARS["a2"]);
-                 EG->fr(ebp_););
+  iv->PROGRAMMER(
+      auto ebp_ = global::cs.generate_unique_string("pr_regs");
+      EG->bss(ebp_, ebp, global::cs.generate_unique_number("fctx"));
+      EG->f(fl, "mov_smd_vd", EG->g(ebp_), "-", VARS["a1"], VARS["a2"]);
+      EG->fr(ebp_););
   // store_vd end
 
   // store_vb begin
@@ -1485,10 +1499,11 @@ void i686::init_invariants() {
 
   iv = make_invariant(cf);
   iv->copy_flags(gg({"ss", "fs", "up", "fu"}));
-  iv->PROGRAMMER(auto ebp_ = global::cs.generate_unique_string("pr_regs");
-                 EG->bss(ebp_, ebp); EG->f(fl, "mov_smb_vb", EG->g(ebp_), "-",
-                                           VARS["a1"], VARS["a2"]);
-                 EG->fr(ebp_););
+  iv->PROGRAMMER(
+      auto ebp_ = global::cs.generate_unique_string("pr_regs");
+      EG->bss(ebp_, ebp, global::cs.generate_unique_number("fctx"));
+      EG->f(fl, "mov_smb_vb", EG->g(ebp_), "-", VARS["a1"], VARS["a2"]);
+      EG->fr(ebp_););
   // store_vb end
 
   // store end
@@ -1499,7 +1514,7 @@ void i686::init_invariants() {
   iv = make_invariant(cf);
   iv->copy_flags(gg({"ss", "up", "fu"}));
   iv->PROGRAMMER(auto esp_ = global::cs.generate_unique_string("pr_regs");
-                 EG->bss(esp_, esp);
+                 EG->bss(esp_, esp, global::cs.generate_unique_number("fctx"));
                  EG->f(fl, "add_rd_vd", EG->g(esp_), std::uint64_t(4));
                  EG->f(fl, "ret"); EG->fr(esp_););
 
@@ -1559,7 +1574,8 @@ void i686::init_invariants() {
   iv->add_register("r", "common");
   iv->copy_flags(gg({"ss", "rc"}));
   iv->PROGRAMMER(auto ebp_ = global::cs.generate_unique_string("pr_regs");
-                 EG->bss(ebp_, ebp); EG->f(fl, "abs_r", VARS["r"], VARS["a"]);
+                 EG->bss(ebp_, ebp, global::cs.generate_unique_number("fctx"));
+                 EG->f(fl, "abs_r", VARS["r"], VARS["a"]);
                  fl.set_flag(type_flags::fundomental_undepended);
                  EG->f(fl, "store_rd", EG->vshd("temporary"), VARS["r"]);
                  EG->f(fl, "call_smd", EG->g(ebp_), "-", EG->vshd("temporary"));
@@ -1568,16 +1584,17 @@ void i686::init_invariants() {
 
   iv = make_invariant(cf);
   iv->copy_flags(gg({"rc"}));
-  iv->PROGRAMMER(auto ebp_ = global::cs.generate_unique_string("pr_regs");
-                 auto reg_ = global::cs.generate_unique_string("pr_regs");
-                 EG->bs(reg_, "common"); EG->f(fl, "push_rd", EG->g(reg_));
-                 EG->bss(ebp_, ebp); EG->f(fl, "abs_r", EG->g(reg_), VARS["a"]);
-                 fl.set_flag(type_flags::fundomental_undepended);
-                 EG->f(fl, "store_rd", EG->vshd("temporary"), EG->g(reg_));
-                 EG->f(fl, "pop_rd", EG->g(reg_)); EG->fr(reg_);
-                 EG->f(fl, "call_smd", EG->g(ebp_), "-", EG->vshd("temporary"));
-                 fl.unset_flag(type_flags::fundomental_undepended);
-                 EG->fr(ebp_););
+  iv->PROGRAMMER(
+      auto ebp_ = global::cs.generate_unique_string("pr_regs");
+      auto reg_ = global::cs.generate_unique_string("pr_regs");
+      auto fctx = global::cs.generate_unique_number("fctx");
+      EG->bs(reg_, "common", fctx); EG->f(fl, "push_rd", EG->g(reg_));
+      EG->bss(ebp_, ebp, fctx); EG->f(fl, "abs_r", EG->g(reg_), VARS["a"]);
+      fl.set_flag(type_flags::fundomental_undepended);
+      EG->f(fl, "store_rd", EG->vshd("temporary"), EG->g(reg_));
+      EG->f(fl, "pop_rd", EG->g(reg_)); EG->fr(reg_);
+      EG->f(fl, "call_smd", EG->g(ebp_), "-", EG->vshd("temporary"));
+      fl.unset_flag(type_flags::fundomental_undepended); EG->fr(ebp_););
   // invoke end
 
   // jump begin
@@ -1590,8 +1607,9 @@ void i686::init_invariants() {
       auto seg1 = global::cs.generate_unique_string("usegment");
       auto reg_ = global::cs.generate_unique_string("pr_regs");
       auto esp_ = global::cs.generate_unique_string("pr_regs");
+      auto fctx = global::cs.generate_unique_number("fctx");
       EG->start_top_segment(seg1); EG->f(fl, "jumper"); EG->end();
-      EG->bss(esp_, esp); EG->bs(reg_, "common");
+      EG->bss(esp_, esp, fctx); EG->bs(reg_, "common", fctx);
       fl.set_flag(type_flags::stack_safe); EG->f(fl, "push_rd", EG->g(reg_));
       EG->f(fl, "push_rd", EG->g(reg_));
       EG->f(fl, "add_rd_vd", EG->g(esp_), std::uint64_t(8));
@@ -1636,8 +1654,10 @@ void i686::init_invariants() {
   iv->copy_flags(gg({"rc"}));
   iv->PROGRAMMER(auto reg_ = global::cs.generate_unique_string("pr_regs");
                  auto esp_ = global::cs.generate_unique_string("pr_regs");
-                 EG->bs(reg_, "common"); EG->f(fl, "push_rd", EG->g(reg_));
-                 EG->f(fl, "push_rd", EG->g(reg_)); EG->bss(esp_, esp);
+                 auto fctx = global::cs.generate_unique_number("fctx");
+                 EG->bs(reg_, "common", fctx);
+                 EG->f(fl, "push_rd", EG->g(reg_));
+                 EG->f(fl, "push_rd", EG->g(reg_)); EG->bss(esp_, esp, fctx);
                  fl.set_flag(type_flags::stack_safe);
                  EG->f(fl, "add_rd_vd", EG->g(esp_), std::uint64_t(8));
                  EG->f(fl, "abs_r", EG->g(reg_), VARS["a"]);
@@ -1650,7 +1670,8 @@ void i686::init_invariants() {
   iv->add_register("r", "common");
   iv->copy_flags(gg({"ss", "rc"}));
   iv->PROGRAMMER(auto ebp_ = global::cs.generate_unique_string("pr_regs");
-                 EG->bss(ebp_, ebp); EG->f(fl, "abs_r", VARS["r"], VARS["a"]);
+                 EG->bss(ebp_, ebp, global::cs.generate_unique_number("fctx"));
+                 EG->f(fl, "abs_r", VARS["r"], VARS["a"]);
                  fl.set_flag(type_flags::fundomental_undepended);
                  EG->f(fl, "store_rd", EG->vshd("temporary"), VARS["r"]);
                  EG->f(fl, "jmp_smd", EG->g(ebp_), "-", EG->vshd("temporary"));
@@ -1659,16 +1680,17 @@ void i686::init_invariants() {
 
   iv = make_invariant(cf);
   iv->copy_flags(gg({"rc"}));
-  iv->PROGRAMMER(auto ebp_ = global::cs.generate_unique_string("pr_regs");
-                 auto reg_ = global::cs.generate_unique_string("pr_regs");
-                 EG->bs(reg_, "common"); EG->f(fl, "push_rd", EG->g(reg_));
-                 EG->bss(ebp_, ebp); EG->f(fl, "abs_r", EG->g(reg_), VARS["a"]);
-                 fl.set_flag(type_flags::fundomental_undepended);
-                 EG->f(fl, "store_rd", EG->vshd("temporary"), EG->g(reg_));
-                 EG->f(fl, "pop_rd", EG->g(reg_)); EG->fr(reg_);
-                 EG->f(fl, "jmp_smd", EG->g(ebp_), "-", EG->vshd("temporary"));
-                 fl.unset_flag(type_flags::fundomental_undepended);
-                 EG->fr(ebp_););
+  iv->PROGRAMMER(
+      auto ebp_ = global::cs.generate_unique_string("pr_regs");
+      auto reg_ = global::cs.generate_unique_string("pr_regs");
+      auto fctx = global::cs.generate_unique_number("fctx");
+      EG->bs(reg_, "common", fctx); EG->f(fl, "push_rd", EG->g(reg_));
+      EG->bss(ebp_, ebp, fctx); EG->f(fl, "abs_r", EG->g(reg_), VARS["a"]);
+      fl.set_flag(type_flags::fundomental_undepended);
+      EG->f(fl, "store_rd", EG->vshd("temporary"), EG->g(reg_));
+      EG->f(fl, "pop_rd", EG->g(reg_)); EG->fr(reg_);
+      EG->f(fl, "jmp_smd", EG->g(ebp_), "-", EG->vshd("temporary"));
+      fl.unset_flag(type_flags::fundomental_undepended); EG->fr(ebp_););
   // jump end
 
   // abs begin
@@ -1690,16 +1712,18 @@ void i686::init_invariants() {
 
   iv = make_invariant(cf);
   iv->copy_flags(gg({"ss", "fs", "up"}));
-  iv->PROGRAMMER(auto ebp_ = global::cs.generate_unique_string("pr_regs");
-                 EG->bss(ebp_, ebp); EG->f(fl, "mov_rd_smd", VARS["r"],
-                                           EG->g(ebp_), "-", EG->vshd("base"));
-                 EG->f(fl, "add_rd_vd", VARS["r"], VARS["a"]); EG->fr(ebp_););
+  iv->PROGRAMMER(
+      auto ebp_ = global::cs.generate_unique_string("pr_regs");
+      EG->bss(ebp_, ebp, global::cs.generate_unique_number("fctx"));
+      EG->f(fl, "mov_rd_smd", VARS["r"], EG->g(ebp_), "-", EG->vshd("base"));
+      EG->f(fl, "add_rd_vd", VARS["r"], VARS["a"]); EG->fr(ebp_););
 
   iv = make_invariant(cf);
   iv->copy_flags(gg({"ss", "fs", "up"}));
   iv->PROGRAMMER(
       auto ebp_ = global::cs.generate_unique_string("pr_regs");
-      EG->bss(ebp_, ebp); EG->f(fl, "mov_rd_vd", VARS["r"], VARS["a"]);
+      EG->bss(ebp_, ebp, global::cs.generate_unique_number("fctx"));
+      EG->f(fl, "mov_rd_vd", VARS["r"], VARS["a"]);
       EG->f(fl, "add_rd_smd", VARS["r"], EG->g(ebp_), "-", EG->vshd("base"));
       EG->fr(ebp_););
   // abs_r end
@@ -1744,10 +1768,18 @@ void i686::init_invariants() {
   iv = make_invariant(cf);
   iv->copy_flags(gg({"ss", "up", "fu", "rc"}));
   iv->PROGRAMMER(auto esp_ = global::cs.generate_unique_string("pr_regs");
-                 EG->bss(esp_, esp);
+                 EG->bss(esp_, esp, global::cs.generate_unique_number("fctx"));
                  EG->f(fl, "sub_rd_vd", g(esp_), std::uint64_t(4));
                  EG->f(fl, "mov_md_rd", g(esp_), VARS["r"]); EG->fr(esp_););
   // push_rd end
+
+  // push_fd begin
+  cf = make_form("push_fd");
+
+  iv = make_invariant(cf);
+  iv->copy_flags(gg({"st", "ss", "fs", "up", "fu"}));
+  iv->PROGRAMMER(EG->t(CAST, "pushfd"););
+  // push_fd end
 
   // push_vd begin
   cf = make_form("push_vd");
@@ -1760,7 +1792,7 @@ void i686::init_invariants() {
   iv = make_invariant(cf);
   iv->copy_flags(gg({"ss", "up", "fu", "rc"}));
   iv->PROGRAMMER(auto esp_ = global::cs.generate_unique_string("pr_regs");
-                 EG->bss(esp_, esp);
+                 EG->bss(esp_, esp, global::cs.generate_unique_number("fctx"));
                  EG->f(fl, "sub_rd_vd", g(esp_), std::uint64_t(4));
                  EG->f(fl, "mov_md_vd", g(esp_), VARS["a"]); EG->fr(esp_););
 
@@ -1775,7 +1807,8 @@ void i686::init_invariants() {
   iv->PROGRAMMER(
       auto reg_ = global::cs.generate_unique_string("pr_regs");
       auto esp_ = global::cs.generate_unique_string("pr_regs");
-      EG->bs(reg_, "common"); EG->bss(esp_, esp);
+      auto fctx = global::cs.generate_unique_number("fctx");
+      EG->bs(reg_, "common", fctx); EG->bss(esp_, esp, fctx);
       EG->f(fl, "push_rd", EG->g(reg_)); EG->f(fl, "push_rd", EG->g(reg_));
       EG->f(fl, "mov_rd_vd", EG->g(reg_), VARS["a"]);
       fl.set_flag(type_flags::stack_safe);
@@ -1783,6 +1816,16 @@ void i686::init_invariants() {
       EG->t(CAST, "sub ", EG->g(esp_), ",4"); EG->f(fl, "pop_rd", EG->g(reg_));
       fl.unset_flag(type_flags::stack_safe); EG->fr(reg_); EG->fr(esp_););
   // push_vd end
+
+  // push_serd begin
+  cf = make_form("push_serd");
+  cf->add_argument("r1");
+  cf->add_argument("r2");
+
+  iv = make_invariant(cf);
+  iv->copy_flags(gg({"st", "ss", "fs", "up", "fu"}));
+  iv->PROGRAMMER(EG->ta(CAST, "nasm", "push DWORD [", VARS["r1"], ":", VARS["r2"], "]"););
+  // push_serd_rd end
 
   // push end
 
@@ -1807,12 +1850,44 @@ void i686::init_invariants() {
   iv = make_invariant(cf);
   iv->copy_flags(gg({"ss", "up", "fu", "rc"}));
   iv->PROGRAMMER(auto esp_ = global::cs.generate_unique_string("pr_regs");
-                 EG->bss(esp_, esp); EG->f(fl, "mov_rd_md", VARS["r"], g(esp_));
+                 EG->bss(esp_, esp, global::cs.generate_unique_number("fctx"));
+                 EG->f(fl, "mov_rd_md", VARS["r"], g(esp_));
                  EG->f(fl, "add_rd_vd", g(esp_), std::uint64_t(4));
                  EG->fr(esp_););
   // pop_rd end
 
+  // pop_fd begin
+  cf = make_form("pop_fd");
+
+  iv = make_invariant(cf);
+  iv->copy_flags(gg({"st", "ss", "fs", "up", "fu"}));
+  iv->PROGRAMMER(EG->t(CAST, "popfd"););
+  // pop_fd end
+
+  // pop_serd begin
+  cf = make_form("pop_serd");
+  cf->add_argument("r1");
+  cf->add_argument("r2");
+
+  iv = make_invariant(cf);
+  iv->copy_flags(gg({"st", "ss", "fs", "up", "fu"}));
+  iv->PROGRAMMER(EG->ta(CAST, "nasm", "pop DWORD [", VARS["r1"], ":", VARS["r2"], "]"););
+  // pop_serd_rd end
+
   // pop end
+
+  // int begin
+
+  // int_vb begin
+  cf = make_form("int_vb");
+  cf->add_argument("a", 8);
+
+  iv = make_invariant(cf);
+  iv->copy_flags(gg({"st", "ss", "fs", "up", "fu"}));
+  iv->PROGRAMMER(EG->t(CAST, "int ", VARS["a"]););
+  // int_vb end
+
+  // int end
 
   // mov begin
 
@@ -3194,6 +3269,15 @@ void i686::init_invariants() {
   iv->PROGRAMMER(EG->f(fl, "add_rd_vd", VARS["r"], std::uint64_t(1)););
   // inc_rd end
 
+  // inc_md begin
+  cf = make_form("inc_md");
+  cf->add_argument("r");
+
+  iv = make_invariant(cf);
+  iv->copy_flags(gg({"st", "fs", "ss", "up", "fu"}));
+  iv->PROGRAMMER(EG->t(CAST, "inc DWORD [", VARS["r"], "]"););
+  // inc_md end
+
   // inc_rb begin
   cf = make_form("inc_rb");
   cf->add_argument("r");
@@ -3223,6 +3307,15 @@ void i686::init_invariants() {
   iv->copy_flags(gg({"fs", "ss", "up", "fu", "rc"}));
   iv->PROGRAMMER(EG->f(fl, "sub_rd_vd", VARS["r"], std::uint64_t(1)););
   // dec_rd end
+
+  // dec_md begin
+  cf = make_form("dec_md");
+  cf->add_argument("r");
+
+  iv = make_invariant(cf);
+  iv->copy_flags(gg({"st", "fs", "ss", "up", "fu"}));
+  iv->PROGRAMMER(EG->t(CAST, "dec DWORD [", VARS["r"], "]"););
+  // dec_md end
 
   // dec_rb begin
   cf = make_form("dec_rb");

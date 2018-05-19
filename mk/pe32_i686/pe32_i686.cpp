@@ -48,6 +48,14 @@ std::uint32_t pe32_i686::get_KERNEL32_hash() {
   return c.get();
 }
 
+std::uint32_t pe32_i686::get_NTDLL_hash() {
+  std::vector<std::uint8_t> ntdll = {0x4e, 0x54, 0x44, 0x4c, 0x4c,
+                                     0x2e, 0x64, 0x6c, 0x6c, 0x0};
+  cry::crc32 c;
+  c.set(ntdll);
+  return c.get();
+}
+
 std::uint32_t pe32_i686::get_LoadLibrary_hash() {
   std::vector<std::uint8_t> loadlibrary = {0x4c, 0x6f, 0x61, 0x64, 0x4c,
                                            0x69, 0x62, 0x72, 0x61, 0x72,
@@ -113,30 +121,67 @@ std::uint32_t pe32_i686::get_GetVersionEx_hash() {
   return result;
 }
 
+std::uint32_t pe32_i686::get_NtQueryInformationProcess_hash() {
+  std::vector<std::uint8_t> ntqueryinformationprocess = {
+      0x4e, 0x74, 0x51, 0x75, 0x65, 0x72, 0x79, 0x49, 0x6e,
+      0x66, 0x6f, 0x72, 0x6d, 0x61, 0x74, 0x69, 0x6f, 0x6e,
+      0x50, 0x72, 0x6f, 0x63, 0x65, 0x73, 0x73, 0x0};
+  std::uint32_t result = get_NTDLL_hash();
+  cry::crc32 c;
+  c.set(ntqueryinformationprocess);
+  result += c.get();
+  return result;
+}
+
+std::uint32_t pe32_i686::get_GetThreadContext_hash() {
+  std::vector<std::uint8_t> getthreadcontext = {
+      0x47, 0x65, 0x74, 0x54, 0x68, 0x72, 0x65, 0x61, 0x64,
+      0x43, 0x6f, 0x6e, 0x74, 0x65, 0x78, 0x74, 0x0};
+  std::uint32_t result = get_KERNEL32_hash();
+  cry::crc32 c;
+  c.set(getthreadcontext);
+  result += c.get();
+  return result;
+}
+
+std::uint32_t pe32_i686::get_SetThreadContext_hash() {
+  std::vector<std::uint8_t> setthreadcontext = {
+      0x53, 0x65, 0x74, 0x54, 0x68, 0x72, 0x65, 0x61, 0x64,
+      0x43, 0x6f, 0x6e, 0x74, 0x65, 0x78, 0x74, 0x0};
+  std::uint32_t result = get_KERNEL32_hash();
+  cry::crc32 c;
+  c.set(setthreadcontext);
+  result += c.get();
+  return result;
+}
+
 void pe32_i686::init_traps() {
   // integrity_check
   add_trap("integrity_check",
            [this](eg::key_value_storage &values, global::flag_container fl) {
              auto seg1 = global::cs.generate_unique_string("usegment");
+             auto fctx = global::cs.generate_unique_number("fctx");
+             auto tmp_1 = global::cs.generate_unique_string("pr_regs");
+             auto tmp_2 = global::cs.generate_unique_string("pr_regs");
              e.f(fl, "store_abs", e.vshd("target"),
                  e.shd(values.get_value<std::string>("target")));
              e.f(fl, "store_vd", e.vshd("count"),
                  e.fszd(values.get_value<std::string>("target")));
              e.f(fl, "store_vb", e.vshd("crc_switch"), std::uint64_t(0));
              e.f(fl, "invoke", e.shd("crc"));
-             e.bs("tmp_1", "common");
-             e.bs("tmp_2", "common");
-             e.f(fl, "push_rd", e.g("tmp_1"));
-             e.f(fl, "push_rd", e.g("tmp_2"));
-             e.f(fl, "load_rd", e.g("tmp_2"), e.vshd("result"));
-             e.f(fl, "mov_rd_vd", e.g("tmp_1"), e.c32d("begin", {}));
-             e.f(fl, "cmp_rd_rd", e.g("tmp_1"), e.g("tmp_2"));
+             e.bs(tmp_1, "common", fctx);
+             e.bs(tmp_2, "common", fctx);
+             e.f(fl, "push_rd", e.g(tmp_1));
+             e.f(fl, "push_rd", e.g(tmp_2));
+             e.f(fl, "load_rd", e.g(tmp_2), e.vshd("result"));
+             e.f(fl, "mov_rd_vd", e.g(tmp_1), e.c32d("begin", {}));
+             e.f(fl, "cmp_rd_rd", e.g(tmp_1), e.g(tmp_2));
              auto new_fl = fl;
              new_fl.set_flag(eg::type_flags::flag_safe);
-             e.f(new_fl, "pop_rd", e.g("tmp_2"));
-             e.f(new_fl, "pop_rd", e.g("tmp_1"));
-             e.fr("tmp_1");
-             e.fr("tmp_2");
+             e.f(new_fl, "pop_rd", e.g(tmp_2));
+             e.f(new_fl, "pop_rd", e.g(tmp_1));
+             e.fr(tmp_1);
+             e.fr(tmp_2);
              e.f(fl, "branch", "e", e.shd(seg1),
                  e.shd(values.get_value<std::string>("if_error")));
              e.end();
@@ -148,19 +193,22 @@ void pe32_i686::init_traps() {
   add_trap("is_debbuger_present",
            [this](eg::key_value_storage &values, global::flag_container fl) {
              auto seg1 = global::cs.generate_unique_string("usegment");
-             e.bs("tmp", "common");
-             e.f(fl, "push_rd", e.g("tmp"));
-             e.f(fl, "mov_rd_vd", e.g("tmp"), std::uint64_t(0x30));
-             e.bss("fs_", eg::i8086::fs);
-             e.f(fl, "mov_rd_serd", e.g("tmp"), e.g("fs_"), e.g("tmp"));
-             e.fr("fs_");
-             e.f(fl, "add_rd_vd", e.g("tmp"), std::uint64_t(2));
-             e.f(fl, "movzx_rd_mb", e.g("tmp"), e.g("tmp"));
-             e.f(fl, "test_rd_rd", e.g("tmp"), e.g("tmp"));
+             auto fctx = global::cs.generate_unique_number("fctx");
+             auto tmp = global::cs.generate_unique_string("pr_regs");
+             auto fs_ = global::cs.generate_unique_string("pr_regs");
+             e.bs(tmp, "common", fctx);
+             e.f(fl, "push_rd", e.g(tmp));
+             e.f(fl, "mov_rd_vd", e.g(tmp), std::uint64_t(0x30));
+             e.bss(fs_, eg::i8086::fs, fctx);
+             e.f(fl, "mov_rd_serd", e.g(tmp), e.g(fs_), e.g(tmp));
+             e.fr(fs_);
+             e.f(fl, "add_rd_vd", e.g(tmp), std::uint64_t(2));
+             e.f(fl, "movzx_rd_mb", e.g(tmp), e.g(tmp));
+             e.f(fl, "test_rd_rd", e.g(tmp), e.g(tmp));
              auto new_fl = fl;
              new_fl.set_flag(eg::type_flags::flag_safe);
-             e.f(new_fl, "pop_rd", e.g("tmp"));
-             e.fr("tmp");
+             e.f(new_fl, "pop_rd", e.g(tmp));
+             e.fr(tmp);
              e.f(fl, "branch", "e", e.shd(seg1),
                  e.shd(values.get_value<std::string>("if_error")));
              e.end();
@@ -172,19 +220,22 @@ void pe32_i686::init_traps() {
   add_trap("nt_global_flag",
            [this](eg::key_value_storage &values, global::flag_container fl) {
              auto seg1 = global::cs.generate_unique_string("usegment");
-             e.bs("tmp", "common");
-             e.f(fl, "push_rd", e.g("tmp"));
-             e.f(fl, "mov_rd_vd", e.g("tmp"), std::uint64_t(0x30));
-             e.bss("fs_", eg::i8086::fs);
-             e.f(fl, "mov_rd_serd", e.g("tmp"), e.g("fs_"), e.g("tmp"));
-             e.fr("fs_");
-             e.f(fl, "add_rd_vd", e.g("tmp"), std::uint64_t(0x68));
-             e.f(fl, "mov_rd_md", e.g("tmp"), e.g("tmp"));
+             auto fctx = global::cs.generate_unique_number("fctx");
+             auto tmp = global::cs.generate_unique_string("pr_regs");
+             auto fs_ = global::cs.generate_unique_string("pr_regs");
+             e.bs(tmp, "common", fctx);
+             e.f(fl, "push_rd", e.g(tmp));
+             e.f(fl, "mov_rd_vd", e.g(tmp), std::uint64_t(0x30));
+             e.bss(fs_, eg::i8086::fs, fctx);
+             e.f(fl, "mov_rd_serd", e.g(tmp), e.g(fs_), e.g(tmp));
+             e.fr(fs_);
+             e.f(fl, "add_rd_vd", e.g(tmp), std::uint64_t(0x68));
+             e.f(fl, "mov_rd_md", e.g(tmp), e.g(tmp));
              auto new_fl = fl;
              new_fl.set_flag(eg::type_flags::flag_safe);
-             e.f(new_fl, "and_rd_vd", e.g("tmp"), std::uint64_t(0x70));
-             e.f(new_fl, "pop_rd", e.g("tmp"));
-             e.fr("tmp");
+             e.f(new_fl, "and_rd_vd", e.g(tmp), std::uint64_t(0x70));
+             e.f(new_fl, "pop_rd", e.g(tmp));
+             e.fr(tmp);
              e.f(fl, "branch", "z", e.shd(seg1),
                  e.shd(values.get_value<std::string>("if_error")));
              e.end();
@@ -193,71 +244,424 @@ void pe32_i686::init_traps() {
   add_tags_to_trap("nt_global_flag", {"all", "undep"});
 
   // HeapFlags
-  add_trap("heap_flags", [this](eg::key_value_storage &values,
-                                global::flag_container fl) {
+  add_trap("heap_flags",
+           [this](eg::key_value_storage &values, global::flag_container fl) {
+             auto over = global::cs.generate_unique_string("usegment");
+             auto end = global::cs.generate_unique_string("usegment");
+             auto compare_2 = global::cs.generate_unique_string("usegment");
+             auto compare_1 = global::cs.generate_unique_string("usegment");
+             auto large = global::cs.generate_unique_string("usegment");
+             auto smaller = global::cs.generate_unique_string("usegment");
+             auto fctx = global::cs.generate_unique_number("fctx");
+             auto tmp_1 = global::cs.generate_unique_string("pr_regs");
+             auto tmp_2 = global::cs.generate_unique_string("pr_regs");
+             auto fs_ = global::cs.generate_unique_string("pr_regs");
+             auto ebp_ = global::cs.generate_unique_string("pr_regs");
+             e.bs(tmp_1, "common", fctx);
+             e.bs(tmp_2, "common", fctx);
+             e.bss(ebp_, eg::i8086::ebp, fctx);
+             e.f(fl, "push_rd", e.g(tmp_1));
+             e.f(fl, "push_rd", e.g(tmp_2));
+             e.f(fl, "mov_rd_vd", e.g(tmp_1), std::uint64_t(0x30));
+             e.bss(fs_, eg::i8086::fs, fctx);
+             e.f(fl, "mov_rd_serd", e.g(tmp_1), e.g(fs_), e.g(tmp_1));
+             e.fr(fs_);
+             e.f(fl, "add_rd_vd", e.g(tmp_1), std::uint64_t(0x18));
+             e.f(fl, "mov_rd_md", e.g(tmp_1), e.g(tmp_1));
+             e.f(fl, "mov_rd_rd", e.g(tmp_2), e.g(tmp_1));
+             e.f(fl, "test_smb_vb", e.g(ebp_), "-", e.vshd("os_switch"),
+                 std::uint64_t(1));
+             e.fr(ebp_);
+             e.f(fl, "branch", "nz", e.shd(large), e.shd(smaller));
+             e.end();
+
+             e.start_segment(large);
+             e.f(fl, "add_rd_vd", e.g(tmp_1), std::uint64_t(0x40));
+             e.f(fl, "add_rd_vd", e.g(tmp_2), std::uint64_t(0x44));
+             e.f(fl, "jump", e.shd(compare_1));
+             e.end();
+
+             e.start_segment(smaller);
+             e.f(fl, "add_rd_vd", e.g(tmp_1), std::uint64_t(0xC));
+             e.f(fl, "add_rd_vd", e.g(tmp_2), std::uint64_t(0x10));
+             e.f(fl, "jump", e.shd(compare_1));
+             e.end();
+
+             e.start_segment(compare_1);
+             e.f(fl, "mov_rd_md", e.g(tmp_1), e.g(tmp_1));
+             e.f(fl, "mov_rd_md", e.g(tmp_2), e.g(tmp_2));
+             e.f(fl, "cmp_rd_vd", e.g(tmp_2), std::uint64_t(0));
+             e.f(fl, "branch", "ne", e.shd(over), e.shd(compare_2));
+             e.end();
+
+             e.start_segment(compare_2);
+             auto new_fl = fl;
+             new_fl.set_flag(eg::type_flags::flag_safe);
+             e.f(new_fl, "and_rd_vd", e.g(tmp_1), std::uint64_t(0xfffffffd));
+             e.f(fl, "branch", "z", e.shd(end), e.shd(over));
+             e.end();
+
+             e.start_segment(over);
+             e.f(fl, "pop_rd", e.g(tmp_2));
+             e.f(fl, "pop_rd", e.g(tmp_1));
+             e.f(fl, "jump", e.shd(values.get_value<std::string>("if_error")));
+             e.end();
+
+             e.start_segment(end);
+             e.f(fl, "pop_rd", e.g(tmp_2));
+             e.f(fl, "pop_rd", e.g(tmp_1));
+             e.fr(tmp_1);
+             e.fr(tmp_2);
+           });
+  add_tags_to_trap("heap_flags", {"all"});
+
+  // TF_check
+  add_trap("tf_check", [this](eg::key_value_storage &values,
+                              global::flag_container fl) {
     auto over = global::cs.generate_unique_string("usegment");
     auto end = global::cs.generate_unique_string("usegment");
-    auto compare_2 = global::cs.generate_unique_string("usegment");
-    auto compare_1 = global::cs.generate_unique_string("usegment");
-    auto large = global::cs.generate_unique_string("usegment");
-    auto smaller = global::cs.generate_unique_string("usegment");
-    e.bs("tmp_1", "common");
-    e.bs("tmp_2", "common");
-    e.bss("ebp_", eg::i8086::ebp);
-    e.f(fl, "push_rd", e.g("tmp_1"));
-    e.f(fl, "push_rd", e.g("tmp_2"));
-    e.f(fl, "mov_rd_vd", e.g("tmp_1"), std::uint64_t(0x30));
-    e.bss("fs_", eg::i8086::fs);
-    e.f(fl, "mov_rd_serd", e.g("tmp_1"), e.g("fs_"), e.g("tmp_1"));
-    e.fr("fs_");
-    e.f(fl, "add_rd_vd", e.g("tmp_1"), std::uint64_t(0x18));
-    e.f(fl, "mov_rd_md", e.g("tmp_1"), e.g("tmp_1"));
-    e.f(fl, "mov_rd_rd", e.g("tmp_2"), e.g("tmp_1"));
-    e.f(fl, "test_smb_vb", e.g("ebp_"), "-", e.vshd("os_switch"),
-        std::uint64_t(1));
-    e.fr("ebp_");
-    e.f(fl, "branch", "nz", e.shd(large), e.shd(smaller));
-    e.end();
-
-    e.start_segment(large);
-    e.f(fl, "add_rd_vd", e.g("tmp_1"), std::uint64_t(0x40));
-    e.f(fl, "add_rd_vd", e.g("tmp_2"), std::uint64_t(0x44));
-    e.f(fl, "jump", e.shd(compare_1));
-    e.end();
-
-    e.start_segment(smaller);
-    e.f(fl, "add_rd_vd", e.g("tmp_1"), std::uint64_t(0xC));
-    e.f(fl, "add_rd_vd", e.g("tmp_2"), std::uint64_t(0x10));
-    e.f(fl, "jump", e.shd(compare_1));
-    e.end();
-
-    e.start_segment(compare_1);
-    e.f(fl, "mov_rd_md", e.g("tmp_1"), e.g("tmp_1"));
-    e.f(fl, "mov_rd_md", e.g("tmp_2"), e.g("tmp_2"));
-    e.f(fl, "cmp_rd_vd", e.g("tmp_2"), std::uint64_t(0));
-    e.f(fl, "branch", "ne", e.shd(over), e.shd(compare_2));
-    e.end();
-
-    e.start_segment(compare_2);
+    auto tf_seh_handler = global::cs.generate_unique_string("usegment");
+    auto tmp_2 = global::cs.generate_unique_string("pr_regs");
+    auto tmp_1 = global::cs.generate_unique_string("pr_regs");
+    auto debug_flag = global::cs.generate_unique_string("udata");
+    auto esp_ = global::cs.generate_unique_string("pr_regs");
+    auto fctx = global::cs.generate_unique_number("fctx");
+    auto fs_ = global::cs.generate_unique_string("pr_regs");
+    e.bs(tmp_1, "common", fctx);
+    e.bss(esp_, eg::i8086::esp, fctx);
+    e.bss(fs_, eg::i8086::fs, fctx);
+    e.f(fl, "push_rd", e.g(tmp_1));
+    e.f(fl, "abs_r", e.g(tmp_1), e.shd(debug_flag));
+    e.f(fl, "mov_mb_vb", e.g(tmp_1), std::uint64_t(1));
+    e.f(fl, "abs_r", e.g(tmp_1), e.shd(tf_seh_handler));
+    e.f(fl, "push_rd", e.g(tmp_1));
+    e.f(fl, "clear_rd", e.g(tmp_1));
+    e.f(fl, "push_serd", e.g(fs_), e.g(tmp_1));
     auto new_fl = fl;
-    new_fl.set_flag(eg::type_flags::flag_safe);
-    e.f(new_fl, "and_rd_vd", e.g("tmp_1"), std::uint64_t(0xfffffffd));
-    e.f(fl, "branch", "z", e.shd(end), e.shd(over));
+    new_fl.set_flag(eg::type_flags::stack_safe);
+    e.f(new_fl, "mov_serd_rd", e.g(fs_), e.g(tmp_1), e.g(esp_));
+    e.f(fl, "push_fd");
+    e.f(new_fl, "or_md_vd", e.g(esp_), std::uint64_t(0x100));
+    e.f(fl, "pop_fd");
+    e.f(fl, "nop");
+    e.f(new_fl, "mov_rd_md", e.g(tmp_1), e.g(esp_));
+    e.bs(tmp_2, "common", fctx);
+    e.f(fl, "clear_rd", e.g(tmp_2));
+    e.f(fl, "mov_serd_rd", e.g(fs_), e.g(tmp_2), e.g(tmp_1));
+    e.fr(tmp_2);
+    e.fr(fs_);
+    e.f(fl, "add_rd_vd", e.g(esp_), std::uint64_t(8));
+    e.fr(esp_);
+    e.f(fl, "abs_r", e.g(tmp_1), e.shd(debug_flag));
+    e.f(fl, "cmp_mb_vb", e.g(tmp_1), std::uint64_t(0));
+    e.f(fl, "branch", "e", e.shd(end), e.shd(over));
+    e.end();
+
+    e.add_data(debug_flag, 1);
+
+    e.start_segment(tf_seh_handler);
+    e.group_save("common", fctx);
+    e.free_group("common");
+    e.grab_group("common");
+    e.bs(tmp_2, "common", fctx);
+    e.bss(esp_, eg::i8086::esp, fctx);
+    e.f(e.gg({"fu"}), "push_rd", e.g(tmp_2));
+    e.f(e.gg({"fu", "ss"}), "mov_rd_rd", e.g(tmp_2), e.g(esp_));
+    e.fr(esp_);
+    e.f(e.gg({"fu"}), "add_rd_vd", e.g(tmp_2), std::uint64_t(0x10));
+    e.f(e.gg({"fu"}), "mov_rd_md", e.g(tmp_2), e.g(tmp_2));
+    e.f(e.gg({"fu"}), "add_rd_vd", e.g(tmp_2), std::uint64_t(0xB8));
+    e.f(e.gg({"fu"}), "inc_md", e.g(tmp_2));
+    e.f(e.gg({"fu"}), "abs_r", e.g(tmp_2), e.shd(debug_flag));
+    e.f(e.gg({"fu"}), "mov_mb_vb", e.g(tmp_2), std::uint64_t(0));
+    e.f(e.gg({"fu"}), "pop_rd", e.g(tmp_2));
+    e.fr(tmp_2);
+    e.bss(tmp_2, eg::i8086::eax, fctx);
+    e.f(e.gg({"fu"}), "clear_rd", e.g(tmp_2));
+    e.fr(tmp_2);
+    e.f(e.gg({"fu"}), "ret");
+    e.group_load("common", fctx);
     e.end();
 
     e.start_segment(over);
-    e.f(fl, "pop_rd", e.g("tmp_2"));
-    e.f(fl, "pop_rd", e.g("tmp_1"));
+    e.f(fl, "pop_rd", e.g(tmp_1));
     e.f(fl, "jump", e.shd(values.get_value<std::string>("if_error")));
     e.end();
 
     e.start_segment(end);
-    e.f(fl, "pop_rd", e.g("tmp_2"));
-    e.f(fl, "pop_rd", e.g("tmp_1"));
-    e.fr("tmp_1");
-    e.fr("tmp_2");
+    e.f(fl, "pop_rd", e.g(tmp_1));
+    e.fr(tmp_1);
   });
-  add_tags_to_trap("heap_flags", {"all"});
+  add_tags_to_trap("tf_check", {"all", "undep"});
+
+  // remote_debugger_present
+  add_trap("remote_debugger_present", [this](eg::key_value_storage &values,
+                                             global::flag_container fl) {
+    auto fctx = global::cs.generate_unique_number("fctx");
+    auto eax_ = global::cs.generate_unique_string("pr_regs");
+    auto esp_ = global::cs.generate_unique_string("pr_regs");
+    auto ebp_ = global::cs.generate_unique_string("pr_regs");
+    auto tmp_1 = global::cs.generate_unique_string("pr_regs");
+    auto over = global::cs.generate_unique_string("usegment");
+    auto end = global::cs.generate_unique_string("usegment");
+    auto check = global::cs.generate_unique_string("usegment");
+    e.bss(eax_, eg::i8086::eax, fctx);
+    e.bss(esp_, eg::i8086::esp, fctx);
+    e.bss(ebp_, eg::i8086::ebp, fctx);
+    e.bs(tmp_1, "common", fctx);
+    e.f(fl, "push_rd", e.g(tmp_1));
+    e.f(fl, "push_rd", e.g(eax_));
+    e.f(fl, "push_rd", e.g(eax_));
+    auto new_fl = fl;
+    new_fl.set_flag(eg::type_flags::stack_safe);
+    e.f(new_fl, "mov_rd_rd", e.g(tmp_1), e.g(esp_));
+    e.f(fl, "push_rd", e.g(tmp_1));
+    e.fr(esp_);
+    e.f(fl, "push_vd", std::uint64_t(0x0));
+    e.f(fl, "push_vd", std::uint64_t(0x4));
+    e.f(fl, "push_rd", e.g(tmp_1));
+    e.f(fl, "push_vd", std::uint64_t(0x7));
+    e.f(fl, "push_vd", std::uint64_t(0xFFFFFFFF));
+    e.f(fl, "call_smd", e.g(ebp_), "-", e.vshd("NtQueryInformationProcess"));
+    e.fr(ebp_);
+    e.f(fl, "pop_rd", e.g(tmp_1));
+    e.f(fl, "test_rd_rd", e.g(eax_), e.g(eax_));
+    e.f(fl, "branch", "nz", e.shd(end), e.shd(check));
+    e.end();
+
+    e.start_segment(check);
+    e.f(fl, "cmp_md_vd", e.g(tmp_1), std::uint64_t(0));
+    e.f(fl, "branch", "e", e.shd(end), e.shd(over));
+    e.end();
+
+    e.start_segment(over);
+    e.f(fl, "pop_rd", e.g(eax_));
+    e.f(fl, "pop_rd", e.g(eax_));
+    e.f(fl, "pop_rd", e.g(tmp_1));
+    e.f(fl, "jump", e.shd(values.get_value<std::string>("if_error")));
+    e.end();
+
+    e.start_segment(end);
+    e.f(fl, "pop_rd", e.g(eax_));
+    e.f(fl, "pop_rd", e.g(eax_));
+    e.f(fl, "pop_rd", e.g(tmp_1));
+    e.fr(eax_);
+    e.fr(tmp_1);
+  });
+  add_tags_to_trap("remote_debugger_present", {"all"});
+
+  // debug_object_handle
+  add_trap("debug_object_handle", [this](eg::key_value_storage &values,
+                                         global::flag_container fl) {
+    auto fctx = global::cs.generate_unique_number("fctx");
+    auto eax_ = global::cs.generate_unique_string("pr_regs");
+    auto esp_ = global::cs.generate_unique_string("pr_regs");
+    auto ebp_ = global::cs.generate_unique_string("pr_regs");
+    auto tmp_1 = global::cs.generate_unique_string("pr_regs");
+    auto over = global::cs.generate_unique_string("usegment");
+    auto end = global::cs.generate_unique_string("usegment");
+    auto check = global::cs.generate_unique_string("usegment");
+    e.bss(eax_, eg::i8086::eax, fctx);
+    e.bss(esp_, eg::i8086::esp, fctx);
+    e.bss(ebp_, eg::i8086::ebp, fctx);
+    e.bs(tmp_1, "common", fctx);
+    e.f(fl, "push_rd", e.g(tmp_1));
+    e.f(fl, "push_rd", e.g(eax_));
+    e.f(fl, "push_rd", e.g(eax_));
+    auto new_fl = fl;
+    new_fl.set_flag(eg::type_flags::stack_safe);
+    e.f(new_fl, "mov_rd_rd", e.g(tmp_1), e.g(esp_));
+    e.f(fl, "push_rd", e.g(tmp_1));
+    e.fr(esp_);
+    e.f(fl, "push_vd", std::uint64_t(0x0));
+    e.f(fl, "push_vd", std::uint64_t(0x4));
+    e.f(fl, "push_rd", e.g(tmp_1));
+    e.f(fl, "push_vd", std::uint64_t(0x1E));
+    e.f(fl, "push_vd", std::uint64_t(0xFFFFFFFF));
+    e.f(fl, "call_smd", e.g(ebp_), "-", e.vshd("NtQueryInformationProcess"));
+    e.fr(ebp_);
+    e.f(fl, "pop_rd", e.g(tmp_1));
+    e.f(fl, "test_rd_rd", e.g(eax_), e.g(eax_));
+    e.f(fl, "branch", "nz", e.shd(end), e.shd(check));
+    e.end();
+
+    e.start_segment(check);
+    e.f(fl, "cmp_md_vd", e.g(tmp_1), std::uint64_t(0));
+    e.f(fl, "branch", "e", e.shd(end), e.shd(over));
+    e.end();
+
+    e.start_segment(over);
+    e.f(fl, "pop_rd", e.g(eax_));
+    e.f(fl, "pop_rd", e.g(eax_));
+    e.f(fl, "pop_rd", e.g(tmp_1));
+    e.f(fl, "jump", e.shd(values.get_value<std::string>("if_error")));
+    e.end();
+
+    e.start_segment(end);
+    e.f(fl, "pop_rd", e.g(eax_));
+    e.f(fl, "pop_rd", e.g(eax_));
+    e.f(fl, "pop_rd", e.g(tmp_1));
+    e.fr(eax_);
+    e.fr(tmp_1);
+  });
+  add_tags_to_trap("debug_object_handle", {"all"});
+
+  // process_debug_flags
+  add_trap("process_debug_flags", [this](eg::key_value_storage &values,
+                                         global::flag_container fl) {
+    auto fctx = global::cs.generate_unique_number("fctx");
+    auto eax_ = global::cs.generate_unique_string("pr_regs");
+    auto esp_ = global::cs.generate_unique_string("pr_regs");
+    auto ebp_ = global::cs.generate_unique_string("pr_regs");
+    auto tmp_1 = global::cs.generate_unique_string("pr_regs");
+    auto over = global::cs.generate_unique_string("usegment");
+    auto end = global::cs.generate_unique_string("usegment");
+    auto check = global::cs.generate_unique_string("usegment");
+    e.bss(eax_, eg::i8086::eax, fctx);
+    e.bss(esp_, eg::i8086::esp, fctx);
+    e.bss(ebp_, eg::i8086::ebp, fctx);
+    e.bs(tmp_1, "common", fctx);
+    e.f(fl, "push_rd", e.g(tmp_1));
+    e.f(fl, "push_rd", e.g(eax_));
+    e.f(fl, "push_rd", e.g(eax_));
+    auto new_fl = fl;
+    new_fl.set_flag(eg::type_flags::stack_safe);
+    e.f(new_fl, "mov_rd_rd", e.g(tmp_1), e.g(esp_));
+    e.f(fl, "push_rd", e.g(tmp_1));
+    e.fr(esp_);
+    e.f(fl, "push_vd", std::uint64_t(0x0));
+    e.f(fl, "push_vd", std::uint64_t(0x4));
+    e.f(fl, "push_rd", e.g(tmp_1));
+    e.f(fl, "push_vd", std::uint64_t(0x1F));
+    e.f(fl, "push_vd", std::uint64_t(0xFFFFFFFF));
+    e.f(fl, "call_smd", e.g(ebp_), "-", e.vshd("NtQueryInformationProcess"));
+    e.fr(ebp_);
+    e.f(fl, "pop_rd", e.g(tmp_1));
+    e.f(fl, "test_rd_rd", e.g(eax_), e.g(eax_));
+    e.f(fl, "branch", "nz", e.shd(end), e.shd(check));
+    e.end();
+
+    e.start_segment(check);
+    e.f(fl, "cmp_md_vd", e.g(tmp_1), std::uint64_t(0));
+    e.f(fl, "branch", "ne", e.shd(end), e.shd(over));
+    e.end();
+
+    e.start_segment(over);
+    e.f(fl, "pop_rd", e.g(eax_));
+    e.f(fl, "pop_rd", e.g(eax_));
+    e.f(fl, "pop_rd", e.g(tmp_1));
+    e.f(fl, "jump", e.shd(values.get_value<std::string>("if_error")));
+    e.end();
+
+    e.start_segment(end);
+    e.f(fl, "pop_rd", e.g(eax_));
+    e.f(fl, "pop_rd", e.g(eax_));
+    e.f(fl, "pop_rd", e.g(tmp_1));
+    e.fr(eax_);
+    e.fr(tmp_1);
+  });
+  add_tags_to_trap("process_debug_flags", {"all"});
+
+  // check_thread_ctx
+  add_trap("check_thread_ctx",
+           [this](eg::key_value_storage &values, global::flag_container fl) {
+             auto fctx = global::cs.generate_unique_number("fctx");
+             auto eax_ = global::cs.generate_unique_string("pr_regs");
+             auto esp_ = global::cs.generate_unique_string("pr_regs");
+             auto ebp_ = global::cs.generate_unique_string("pr_regs");
+             auto tmp_1 = global::cs.generate_unique_string("pr_regs");
+             auto tmp_2 = global::cs.generate_unique_string("pr_regs");
+             auto over = global::cs.generate_unique_string("usegment");
+             auto end = global::cs.generate_unique_string("usegment");
+             auto check = global::cs.generate_unique_string("usegment");
+             e.bss(eax_, eg::i8086::eax, fctx);
+             e.bss(esp_, eg::i8086::esp, fctx);
+             e.bss(ebp_, eg::i8086::ebp, fctx);
+             e.bs(tmp_1, "common", fctx);
+             e.bs(tmp_2, "common", fctx);
+             e.f(fl, "push_rd", e.g(eax_));
+             e.f(fl, "push_rd", e.g(tmp_1));
+             e.f(fl, "push_rd", e.g(tmp_2));
+             auto new_fl = fl;
+             new_fl.set_flag(eg::type_flags::stack_safe);
+             e.f(new_fl, "sub_rd_vd", e.g(esp_), std::uint64_t(0x2CC));
+             e.f(new_fl, "mov_rd_rd", e.g(tmp_1), e.g(esp_));
+             e.f(fl, "mov_md_vd", e.g(tmp_1), std::uint64_t(0x10010));
+             e.f(fl, "push_rd", e.g(tmp_1));
+             e.f(fl, "push_rd", e.g(tmp_1));
+             e.f(fl, "push_vd", std::uint64_t(0xFFFFFFFE));
+             e.f(fl, "call_smd", e.g(ebp_), "-", e.vshd("GetThreadContext"));
+             e.fr(ebp_);
+             e.f(fl, "pop_rd", e.g(tmp_1));
+             e.f(fl, "test_rd_rd", e.g(eax_), e.g(eax_));
+             e.f(fl, "branch", "z", e.shd(end), e.shd(check));
+             e.end();
+
+             e.start_segment(check);
+             e.f(fl, "clear_rd", e.g(tmp_2));
+             for (uint8_t i = 0; i < 4; i++) {
+               e.f(fl, "add_rd_vd", e.g(tmp_1), std::uint64_t(4));
+               e.f(fl, "or_rd_md", e.g(tmp_2), e.g(tmp_1));
+             }
+             e.f(fl, "cmp_rd_vd", e.g(tmp_2), std::uint64_t(0));
+             e.f(fl, "branch", "e", e.shd(end), e.shd(over));
+             e.end();
+
+             e.start_segment(over);
+             e.f(new_fl, "add_rd_vd", e.g(esp_), std::uint64_t(0x2CC));
+             e.f(fl, "pop_rd", e.g(tmp_2));
+             e.f(fl, "pop_rd", e.g(tmp_1));
+             e.f(fl, "pop_rd", e.g(eax_));
+             e.f(fl, "jump", e.shd(values.get_value<std::string>("if_error")));
+             e.end();
+
+             e.start_segment(end);
+             e.f(new_fl, "add_rd_vd", e.g(esp_), std::uint64_t(0x2CC));
+             e.fr(esp_);
+             e.f(fl, "pop_rd", e.g(tmp_2));
+             e.f(fl, "pop_rd", e.g(tmp_1));
+             e.f(fl, "pop_rd", e.g(eax_));
+             e.fr(eax_);
+             e.fr(tmp_1);
+             e.fr(tmp_2);
+           });
+  add_tags_to_trap("check_thread_ctx", {"all"});
+
+  // reset_thread_ctx
+  add_trap("reset_thread_ctx",
+           [this](eg::key_value_storage &values, global::flag_container fl) {
+             auto fctx = global::cs.generate_unique_number("fctx");
+             auto eax_ = global::cs.generate_unique_string("pr_regs");
+             auto esp_ = global::cs.generate_unique_string("pr_regs");
+             auto ebp_ = global::cs.generate_unique_string("pr_regs");
+             auto tmp_1 = global::cs.generate_unique_string("pr_regs");
+             e.bss(eax_, eg::i8086::eax, fctx);
+             e.bss(esp_, eg::i8086::esp, fctx);
+             e.bss(ebp_, eg::i8086::ebp, fctx);
+             e.bs(tmp_1, "common", fctx);
+             e.f(fl, "push_rd", e.g(eax_));
+             e.f(fl, "push_rd", e.g(tmp_1));
+             auto new_fl = fl;
+             new_fl.set_flag(eg::type_flags::stack_safe);
+             e.f(new_fl, "sub_rd_vd", e.g(esp_), std::uint64_t(0x2CC));
+             e.f(new_fl, "mov_rd_rd", e.g(tmp_1), e.g(esp_));
+             e.f(fl, "push_rd", e.g(tmp_1));
+             e.f(fl, "mov_md_vd", e.g(tmp_1), std::uint64_t(0x10010));
+             for (uint8_t i = 0; i < 6; i++) {
+               e.f(fl, "add_rd_vd", e.g(tmp_1), std::uint64_t(4));
+               e.f(fl, "mov_md_vd", e.g(tmp_1), std::uint64_t(0));
+             }
+             e.f(fl, "push_vd", std::uint64_t(0xFFFFFFFE));
+             e.f(fl, "call_smd", e.g(ebp_), "-", e.vshd("SetThreadContext"));
+             e.fr(ebp_);
+             e.f(new_fl, "add_rd_vd", e.g(esp_), std::uint64_t(0x2CC));
+             e.fr(esp_);
+             e.f(fl, "pop_rd", e.g(tmp_1));
+             e.f(fl, "pop_rd", e.g(eax_));
+             e.fr(eax_);
+             e.fr(tmp_1);
+           });
+  add_tags_to_trap("reset_thread_ctx", {"all"});
 }
 
 void pe32_i686::end_init_code() {
@@ -314,7 +718,7 @@ void pe32_i686::clear_exit_init_code() {
 void pe32_i686::error_exit_init_code() {
   e.start_segment("error_exit");
   e.f("push_vd", std::uint64_t(1));
-  e.bss("ebp_", eg::i8086::ebp);
+  e.bsp("ebp_", eg::i8086::ebp);
   e.f("call_smd", e.g("ebp_"), "-", e.vshd("ExitProcess"));
   e.fr("ebp_");
   e.end();
@@ -680,8 +1084,8 @@ void pe32_i686::build_import_stub() {
     for (auto key : keys) {
       e.add_data("import_storage_" + std::to_string(counter), 4);
       e.start_segment("import_guard_" + std::to_string(counter));
-      e.bs("accum", "common");
-      e.bss("esp_", eg::i8086::esp);
+      e.bs("accum", "common", global::cs.generate_unique_number("fctx"));
+      e.bsp("esp_", eg::i8086::esp);
       e.f(e.gg({"fu"}), "push_rd", e.g("accum"));
       e.f(e.gg({"fu"}), "push_rd", e.g("accum"));
       e.f(e.gg({"fu"}), "abs_r", e.g("accum"),
@@ -1305,6 +1709,9 @@ std::uint32_t pe32_i686::build_code(std::vector<std::uint8_t> *stub,
   e.add_var("ExitProcess", 4);
   e.add_var("VirtualProtect", 4);
   e.add_var("GetVersionEx", 4);
+  e.add_var("NtQueryInformationProcess", 4);
+  e.add_var("GetThreadContext", 4);
+  e.add_var("SetThreadContext", 4);
 
   search_expx_init_code();
   get_apix_init_code();
@@ -1430,6 +1837,14 @@ std::uint32_t pe32_i686::build_code(std::vector<std::uint8_t> *stub,
   e.f("store_rd", e.vshd("VirtualProtect"), e.g("tmp"));
   e.fr("tmp");
 
+  e.f("store_rd", e.vshd("hash"),
+      std::uint64_t(get_NtQueryInformationProcess_hash()));
+  e.f("invoke", e.shd("get_apix"));
+  e.bf("tmp", "common");
+  e.f("load_rd", e.g("tmp"), e.vshd("func"));
+  e.f("store_rd", e.vshd("NtQueryInformationProcess"), e.g("tmp"));
+  e.fr("tmp");
+
   e.f("store_rd", e.vshd("hash"), std::uint64_t(get_GetVersionEx_hash()));
   e.f("invoke", e.shd("get_apix"));
   e.bf("tmp", "common");
@@ -1437,13 +1852,27 @@ std::uint32_t pe32_i686::build_code(std::vector<std::uint8_t> *stub,
   e.f("store_rd", e.vshd("GetVersionEx"), e.g("tmp"));
   e.fr("tmp");
 
+  e.f("store_rd", e.vshd("hash"), std::uint64_t(get_GetThreadContext_hash()));
+  e.f("invoke", e.shd("get_apix"));
+  e.bf("tmp", "common");
+  e.f("load_rd", e.g("tmp"), e.vshd("func"));
+  e.f("store_rd", e.vshd("GetThreadContext"), e.g("tmp"));
+  e.fr("tmp");
+
+  e.f("store_rd", e.vshd("hash"), std::uint64_t(get_SetThreadContext_hash()));
+  e.f("invoke", e.shd("get_apix"));
+  e.bf("tmp", "common");
+  e.f("load_rd", e.g("tmp"), e.vshd("func"));
+  e.f("store_rd", e.vshd("SetThreadContext"), e.g("tmp"));
+  e.fr("tmp");
+
   e.f("invoke", e.shd("vista_or_higher"));
 
-  // auto beg_trap = add_container();
-  // add_to_container(beg_trap, "target", std::string("begin"));
-  // add_to_container(beg_trap, "if_error", std::string("clear_exit"));
-  // insert_trap("heap_flags", beg_trap, {});
-  // remove_container(beg_trap);
+  auto beg_trap = add_container();
+  add_to_container(beg_trap, "target", std::string("begin"));
+  add_to_container(beg_trap, "if_error", std::string("clear_exit"));
+  insert_trap("reset_thread_ctx", beg_trap, {});
+  remove_container(beg_trap);
 
   e.f("jump", e.shd("import"));
   e.end();

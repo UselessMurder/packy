@@ -172,7 +172,9 @@ class build_root : public node,
   std::map<std::string, RAsm *> assemblers;
   std::uint64_t base;
   std::uint64_t stub_size;
-  std::map<std::string, std::pair<std::string, bool>> fake_registers;
+  std::map<std::string, std::pair<std::string, uint64_t>> fake_registers;
+  std::map<uint64_t, std::set<std::string>> fake_contexts;
+
 
   virtual void init_assemblers() = 0;
   virtual void init_invariants() = 0;
@@ -261,10 +263,10 @@ class build_root : public node,
   std::string to_string();
 
   void bf(std::string r_name, std::string g_name);
-  void bs(std::string r_name, std::string g_name);
+  void bs(std::string r_name, std::string g_name, uint64_t ctx);
 
   void bsp(std::string rf_name, std::string rr_name);
-  void bss(std::string rf_name, std::string rr_name);
+  void bss(std::string rf_name, std::string rr_name, uint64_t ctx);
 
   std::string g(std::string r_name);
   std::string g(std::string r_name, std::string half_name);

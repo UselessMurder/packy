@@ -448,7 +448,8 @@ void build_root::translating(std::vector<uint8_t> *stub) {
   self_state = build_states::translating;
 
   for (auto mp : build_sequence) {
-    if(mp->check_flag(type_flags::memory_group) && mp->check_flag(type_flags::full_processed))
+    if (mp->check_flag(type_flags::memory_group) &&
+        mp->check_flag(type_flags::full_processed))
       continue;
     std::uint64_t shift_val = mp->get_shift();
     mp->run_functor(
@@ -468,7 +469,8 @@ void build_root::translating(std::vector<uint8_t> *stub) {
           }
           return false;
         },
-        {bypass_flags::self, bypass_flags::childs}, global::cs.generate_unique_number("ctx"));
+        {bypass_flags::self, bypass_flags::childs},
+        global::cs.generate_unique_number("ctx"));
   }
 
   for (auto mp : build_sequence) {
@@ -492,7 +494,8 @@ void build_root::get_depended_memory(
     mp = find_node_by_flag<memory_piece>(target, type_flags::memory_top,
                                          {bypass_flags::parents});
 
-  if(!target->check_flag(type_flags::memory_group) || target->check_flag(type_flags::full_processed)) {
+  if (!target->check_flag(type_flags::memory_group) ||
+      target->check_flag(type_flags::full_processed)) {
     if ((target->get_state() >= self_state) ||
         ((target->check_flag(type_flags::fixed) ||
           target->check_flag(type_flags::memory_static)) &&
@@ -1041,16 +1044,24 @@ void build_root::bf(std::string r_name, std::string g_name) {
     throw std::invalid_argument("Fake register name: " + r_name +
                                 " already binded");
   fake_registers[r_name] =
-      std::make_pair<std::string, bool>(get_free(g_name), false);
+      std::pair<std::string, uint64_t>(get_free(g_name), 0xFFFFFFFFFFFFFFFF);
   grab_register(fake_registers[r_name].first);
 }
-void build_root::bs(std::string r_name, std::string g_name) {
+
+void build_root::bs(std::string r_name, std::string g_name, uint64_t ctx) {
   if (fake_registers.count(r_name) > 0)
     throw std::invalid_argument("Fake register name: " + r_name +
                                 " already binded");
-  fake_registers[r_name] =
-      std::make_pair<std::string, bool>(get_rand(g_name), true);
-  local_save(fake_registers[r_name].first);
+
+  if (fake_contexts.count(ctx) < 1)
+    fake_registers[r_name] =
+        std::pair<std::string, uint64_t>(get_rand(g_name), ctx);
+  else
+    fake_registers[r_name] = std::pair<std::string, uint64_t>(
+        get_rand(g_name, fake_contexts[ctx]), ctx);
+
+  fake_contexts[ctx].insert(fake_registers[r_name].first);
+  local_save(fake_registers[r_name].first, ctx);
   free_register(fake_registers[r_name].first);
   grab_register(fake_registers[r_name].first);
 }
@@ -1060,18 +1071,25 @@ void build_root::bsp(std::string rf_name, std::string rr_name) {
     throw std::invalid_argument("Fake register name: " + rf_name +
                                 " already binded");
   fake_registers[rf_name] =
-      std::make_pair<std::string, bool>(std::string(rr_name), false);
+      std::pair<std::string, uint64_t>(rr_name, 0xFFFFFFFFFFFFFFFF);
   grab_register(rr_name);
 }
 
-void build_root::bss(std::string rf_name, std::string rr_name) {
+void build_root::bss(std::string rf_name, std::string rr_name, uint64_t ctx) {
   if (fake_registers.count(rf_name) > 0)
     throw std::invalid_argument("Fake register name: " + rf_name +
                                 " already binded");
 
-  fake_registers[rf_name] =
-      std::make_pair<std::string, bool>(std::string(rr_name), true);
-  local_save(rr_name);
+  if (fake_contexts.count(ctx) < 1) {
+    if (fake_contexts[ctx].find(rr_name) != fake_contexts[ctx].end())
+      throw std::invalid_argument(
+          "Register with name: " + rr_name +
+          "already exists in context: " + std::to_string(ctx));
+  }
+
+  fake_registers[rf_name] = std::pair<std::string, uint64_t>(rr_name, ctx);
+  fake_contexts[ctx].insert(rr_name);
+  local_save(rr_name, ctx);
   free_register(rr_name);
   grab_register(rr_name);
 }
@@ -1094,10 +1112,15 @@ void build_root::fr(std::string r_name) {
   if (fake_registers.count(r_name) < 1)
     throw std::invalid_argument("Fake register name: " + r_name +
                                 " is not binded");
-  if (fake_registers[r_name].second)
-    local_load(fake_registers[r_name].first);
-  else
-    free_register(fake_registers[r_name].first);
+  std::pair<std::string, uint64_t> &fake = fake_registers[r_name];
+
+  if (fake.second != 0xFFFFFFFFFFFFFFFF) {
+    local_load(fake.first, fake.second);
+    fake_contexts[fake.second].erase(fake.first);
+    if (fake_contexts[fake.second].size() == 0)
+      fake_contexts.erase(fake.second);
+  } else
+    free_register(fake.first);
   fake_registers.erase(r_name);
 }
 

@@ -1,11 +1,12 @@
-// This is an open source non-commercial project. Dear PVS-Studio, please check it.
+// This is an open source non-commercial project. Dear PVS-Studio, please check
+// it.
 
 // PVS-Studio Static Code Analyzer for C, C++ and C#: http://www.viva64.com
 
-#include <algorithm>
 #include <eg/base/machine_state.h>
-#include <functional>
 #include <global/global_entities.h>
+#include <algorithm>
+#include <functional>
 
 namespace eg {
 
@@ -15,11 +16,9 @@ machine_state::~machine_state() {}
 
 void machine_state::set_registers(
     std::initializer_list<std::string> registers) {
-  if (state.size() != 0)
-    throw std::domain_error("Registers already set");
+  if (state.size() != 0) throw std::domain_error("Registers already set");
   for (auto register_name : registers) {
     state[register_name] = false;
-    local_stack[register_name] = std::make_pair(0, std::list<bool>());
   }
 }
 
@@ -31,54 +30,65 @@ void machine_state::add_group(std::string group_name,
                                   " is not exists");
   }
   groups[group_name] = registers;
-  group_stack[group_name] = std::make_pair(0, std::list<std::vector<bool>>());
 }
 
-void machine_state::local_save(std::string register_name) {
+void machine_state::local_save(std::string register_name, uint64_t ctx) {
   if (state.count(register_name) < 1)
     throw std::invalid_argument("Register with name: " + register_name +
                                 " is not exists");
-  local_stack[register_name].first++;
-  local_stack[register_name].second.push_back(state[register_name]);
+
+  if (local_memory[register_name].count(ctx) > 0)
+    throw std::invalid_argument("Context " + std::to_string(ctx) +
+                                " for register " + register_name +
+                                " already used");
+
+  local_memory[register_name][ctx] = state[register_name];
 }
 
-void machine_state::local_load(std::string register_name) {
+void machine_state::local_load(std::string register_name, uint64_t ctx) {
   if (state.count(register_name) < 1)
     throw std::invalid_argument("Register with name: " + register_name +
                                 " is not exists");
-  if (local_stack[register_name].first < 1)
-    throw std::domain_error("Stack for register with name: " + register_name +
-                            " is empty");
-  local_stack[register_name].first--;
-  state[register_name] = local_stack[register_name].second.back();
-  local_stack[register_name].second.pop_back();
+
+  if (local_memory[register_name].count(ctx) < 1)
+    throw std::invalid_argument("Context " + std::to_string(ctx) +
+                                " for register " + register_name +
+                                " is not exists");
+
+  state[register_name] = local_memory[register_name][ctx];
+  local_memory[register_name].erase(ctx);
 }
 
-void machine_state::group_save(std::string group_name) {
+void machine_state::group_save(std::string group_name, uint64_t ctx) {
   if (groups.count(group_name) < 1)
     throw std::invalid_argument("Registers group with name: " + group_name +
                                 " is not exists");
-  group_stack[group_name].first++;
-  group_stack[group_name].second.push_back(std::vector<bool>());
-  std::vector<bool> *current_state = &(group_stack[group_name].second.back());
+
+  if (group_memory[group_name].count(ctx) > 0)
+    throw std::invalid_argument("Context " + std::to_string(ctx) +
+                                " for registers group with name " + group_name +
+                                " already used");
+
+  std::vector<bool> *current_state = &group_memory[group_name][ctx];
   std::vector<std::string> *current_group = &(groups[group_name]);
-  for (auto reg : *current_group)
-    current_state->push_back(state[reg]);
+  for (auto reg : *current_group) current_state->push_back(state[reg]);
 }
 
-void machine_state::group_load(std::string group_name) {
+void machine_state::group_load(std::string group_name, uint64_t ctx) {
   if (groups.count(group_name) < 1)
     throw std::invalid_argument("Registers group with name: " + group_name +
                                 " is not exists");
-  if (group_stack[group_name].first < 1)
-    throw std::domain_error(
-        "Stack for registers group with name: " + group_name + " is empty");
-  group_stack[group_name].first--;
-  std::vector<bool> *current_state = &(group_stack[group_name].second.back());
+
+  if (group_memory[group_name].count(ctx) < 1)
+    throw std::invalid_argument("Context " + std::to_string(ctx) +
+                                " for registers group with name " + group_name +
+                                " is not exists");
+
+  std::vector<bool> *current_state = &group_memory[group_name][ctx];
   std::vector<std::string> *current_group = &(groups[group_name]);
   for (std::uint32_t i = 0; i < current_group->size(); i++)
     state[(*current_group)[i]] = (*current_state)[i];
-  group_stack[group_name].second.pop_back();
+  group_memory[group_name].erase(ctx);
 }
 
 std::uint32_t machine_state::get_free_count(std::string group_name) {
@@ -88,8 +98,7 @@ std::uint32_t machine_state::get_free_count(std::string group_name) {
   std::uint32_t count = 0;
   std::vector<std::string> *current_group = &(groups[group_name]);
   for (auto reg : *current_group) {
-    if (!state[reg])
-      count++;
+    if (!state[reg]) count++;
   }
   return count;
 }
@@ -131,8 +140,7 @@ void machine_state::free_group(std::string group_name) {
     throw std::invalid_argument("Registers group with name: " + group_name +
                                 " is not exists");
   std::vector<std::string> *current_group = &(groups[group_name]);
-  for (auto reg : *current_group)
-    state[reg] = false;
+  for (auto reg : *current_group) state[reg] = false;
 }
 
 std::string machine_state::get_free(std::string group_name) {
@@ -166,6 +174,27 @@ std::string machine_state::get_rand(std::string group_name) {
                        current_group.size()];
 }
 
+std::string machine_state::get_rand(std::string group_name, std::set<std::string> &excluded) {
+  if (groups.count(group_name) < 1)
+    throw std::invalid_argument("Registers group with name: " + group_name +
+                                " is not exists");
+  std::vector<std::string> &current_group = groups[group_name];
+  std::vector<std::string> tmp;
+
+  for(auto r : current_group) {
+    if(excluded.find(r) != excluded.end())
+      continue;
+    tmp.push_back(r);
+  }
+
+  if(tmp.size() == 0)
+    throw std::domain_error("All regisers are excluded from group with name: " + group_name);
+
+  global::rc.random_shuffle_vector(&tmp);
+  return tmp[global::rc.generate_random_number() %
+                       tmp.size()]; 
+}
+
 std::string machine_state::get_sub_register(std::string register_name,
                                             std::string half_name) {
   if (sub_registers.count(register_name) < 1)
@@ -177,13 +206,12 @@ std::string machine_state::get_sub_register(std::string register_name,
         "Register with name: " + register_name +
         " doesn`t have sub register with name: " + half_name);
 
-  return sub_registers[register_name][half_name]; 
+  return sub_registers[register_name][half_name];
 }
 
 bool machine_state::try_grab_registers(
     std::map<std::string, std::string> *in,
     std::map<std::string, std::string> *out) {
-
   std::vector<std::string> groups_sequence;
   std::set<std::string> used_groups;
   std::multimap<std::string, std::string> group_members;
@@ -193,8 +221,7 @@ bool machine_state::try_grab_registers(
     group_members.insert(std::make_pair(r.second, r.first));
   }
 
-  for (auto g : used_groups)
-    groups_sequence.push_back(g);
+  for (auto g : used_groups) groups_sequence.push_back(g);
 
   for (auto g : used_groups) {
     if (groups.count(g) == 0)
@@ -225,23 +252,21 @@ bool machine_state::try_grab_registers(
 
 void machine_state::free_registers(
     std::map<std::string, std::string> *registers) {
-  for (auto r : *registers)
-    state[r.second] = false;
+  for (auto r : *registers) state[r.second] = false;
 }
 
- void machine_state::add_sub_registers(
-      std::string register_name,
-      std::initializer_list<std::pair<std::string, std::string>> half_register) {
-
+void machine_state::add_sub_registers(
+    std::string register_name,
+    std::initializer_list<std::pair<std::string, std::string>> half_register) {
   if (state.count(register_name) < 1)
     throw std::invalid_argument("Register with name: " + register_name +
                                 " is not exists");
 
-  if(sub_registers.count(register_name) < 1)
-    sub_registers[register_name] = std::map<std::string,std::string>();
+  if (sub_registers.count(register_name) < 1)
+    sub_registers[register_name] = std::map<std::string, std::string>();
 
-  for(auto hr : half_register)
+  for (auto hr : half_register)
     sub_registers[register_name][hr.first] = hr.second;
- }
+}
 
-} // namespace eg
+}  // namespace eg
