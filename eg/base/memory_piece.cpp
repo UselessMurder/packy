@@ -99,17 +99,19 @@ void group::check_static() {
   if (check_flag(type_flags::group_taged)) return;
 
   if (align_value == 1) {
-    bool ok = run_functor(
+    std::function<bool(node *, std::uint64_t)> fn =
         [](node *current_node, std::uint64_t ctx) -> bool {
-          if (current_node->check_flag(type_flags::memory_group))
-            node_cast<group>(current_node)->check_static();
+      if (current_node->check_flag(type_flags::memory_group))
+        node_cast<group>(current_node)->check_static();
 
-          if (!current_node->check_flag(type_flags::memory_static) &&
-              current_node->check_flag(type_flags::build_memory))
-            return true;
-          return false;
-        },
-        {bypass_flags::childs}, global::cs.generate_unique_number("ctx"));
+      if (!current_node->check_flag(type_flags::memory_static) &&
+          current_node->check_flag(type_flags::build_memory))
+        return true;
+      return false;
+    };
+
+    bool ok = run_functor(fn, {bypass_flags::childs},
+                          global::cs.generate_unique_number("ctx"));
 
     if (!ok) set_flag(type_flags::memory_static);
   }
@@ -282,9 +284,14 @@ void code_line::rebuild(std::uint8_t build_code) {
     std::stringstream ss;
     code.clear();
 
+    bool simple = true;
+
     for (auto ch : childs)
-      if (ch->check_flag(type_flags::build_part))
+      if (ch->check_flag(type_flags::build_part)) {
         ss << node_cast<part>(ch)->to_string();
+        if(ch->check_flag(type_flags::dependence) || ch->check_flag(type_flags::will_balanced))
+          simple = false;
+      }
 
     if (check_flag(type_flags::do_not_use_shift))
       root->assembly(&code, ss.str(), assembler_name, 0);
@@ -292,8 +299,11 @@ void code_line::rebuild(std::uint8_t build_code) {
       root->assembly(&code, ss.str(), assembler_name, shift);
     size = code.size();
     if (align_value != 1) global::align(size, overhead, align_value);
-    
-    self_state = root->get_state();
+
+    if(!simple || check_flag(type_flags::use_shift))
+      self_state = root->get_state();
+    else
+      self_state = build_states::done;
   }
 }
 

@@ -38,6 +38,7 @@ i686::i686() : i8086() {
   add_group("use", {eax, ecx, edx, ebx, esp, ebp, esi, edi});
   add_group("segment", {cs, ss, ds, es, fs, gs});
   add_group("common", {eax, ecx, edx, ebx, esi, edi});
+  add_group("unsafe", {eax, ecx, edx, ebx, esi, edi, ebp});
   add_group("base", {eax, ecx, edx, ebx});
   add_sub_registers(eax, {{"w", ax}, {"lb", al}, {"hb", ah}});
   add_sub_registers(ecx, {{"w", cx}, {"lb", cl}, {"hb", ch}});
@@ -53,35 +54,73 @@ i686::i686() : i8086() {
          {"fs", type_flags::flag_safe},
          {"up", type_flags::debug_unprotected},
          {"fu", type_flags::fundomental_undepended},
-         {"rc", type_flags::invariant_recursive}};
+         {"rc", type_flags::invariant_recursive},
+         {"sh", type_flags::use_shift}};
 
   init_assemblers();
   init_invariants();
-  set_recursion_counter(0);
+  set_recursion_counter(5);
   get_build_node()->select_node();
 }
 i686::~i686() {}
 
+int __lib_asm_cb(RLibPlugin *pl, void *user, void *data) {
+  RAsmPlugin *hand = (RAsmPlugin *)data;
+
+  for (auto c_asm : node_cast<build_root>(global_root)->assemblers)
+    r_asm_add(c_asm.second, hand);
+  return true;
+}
+
+int __lib_asm_dt(RLibPlugin *pl, void *p, void *u) { return true; }
+
 void i686::init_assemblers() {
-  RAsm *a = 0;
-  a = r_asm_new();
-  if (!r_asm_use(a, "x86")) throw std::domain_error("Invalid assemler name");
-  if (!r_asm_set_bits(a, get_value<std::uint32_t>("bitness")))
-    throw std::domain_error("Invalid bintess");
-  assemblers["default"] = a;
+  const char *path;
 
-  a = r_asm_new();
-  if (!r_asm_use(a, "x86.as")) throw std::domain_error("Invalid assemler name");
-  if (!r_asm_set_bits(a, get_value<std::uint32_t>("bitness")))
-    throw std::domain_error("Invalid bintess");
-  assemblers["gas"] = a;
+  assemblers["default"] = r_asm_new();
+  assemblers["gas"] = r_asm_new();
+  assemblers["nasm"] = r_asm_new();
+  assemblers["olly"] = r_asm_new();
 
-  a = r_asm_new();
-  if (!r_asm_use(a, "x86.nasm"))
-    throw std::domain_error("Invalid assemler name");
-  if (!r_asm_set_bits(a, get_value<std::uint32_t>("bitness")))
+  r_lib = r_lib_new("radare_plugin");
+
+  r_lib_add_handler(r_lib, R_LIB_TYPE_ASM, "(dis)assembly plugins",
+                    &__lib_asm_cb, &__lib_asm_dt, NULL);
+
+  path = r_sys_getenv(R_LIB_ENV);
+  if (path && *path) r_lib_opendir(r_lib, path);
+
+  char *homeplugindir = r_str_home(R2_HOME_PLUGINS);
+  r_lib_opendir(r_lib, homeplugindir);
+  free(homeplugindir);
+  char *plugindir = r_str_r2_prefix(R2_PLUGINS);
+  char *extrasdir = r_str_r2_prefix(R2_EXTRAS);
+  char *bindingsdir = r_str_r2_prefix(R2_BINDINGS);
+  r_lib_opendir(r_lib, plugindir);
+  r_lib_opendir(r_lib, extrasdir);
+  r_lib_opendir(r_lib, bindingsdir);
+  free(plugindir);
+  free(extrasdir);
+  free(bindingsdir);
+  
+  if (!r_asm_use(assemblers["default"], "x86")) throw std::domain_error("Invalid assembler name");
+  if (!r_asm_set_bits(assemblers["default"], get_value<std::uint32_t>("bitness")))
     throw std::domain_error("Invalid bintess");
-  assemblers["nasm"] = a;
+  
+  if (!r_asm_use(assemblers["gas"], "x86.as"))
+    throw std::domain_error("Invalid assembler name");
+  if (!r_asm_set_bits(assemblers["gas"], get_value<std::uint32_t>("bitness")))
+    throw std::domain_error("Invalid bintess");
+  
+  if (!r_asm_use(assemblers["nasm"], "x86.nasm"))
+    throw std::domain_error("Invalid assembler name");
+  if (!r_asm_set_bits(assemblers["nasm"], get_value<std::uint32_t>("bitness")))
+    throw std::domain_error("Invalid bintess");
+  
+  if (!r_asm_use(assemblers["olly"], "x86.olly"))
+    throw std::domain_error("Invalid assembler name");
+  if (!r_asm_set_bits(assemblers["olly"], get_value<std::uint32_t>("bitness")))
+    throw std::domain_error("Invalid bintess");
 }
 
 void i686::init_state() {
@@ -1458,10 +1497,11 @@ void i686::init_invariants() {
 
   iv = make_invariant(cf);
   iv->copy_flags(gg({"ss", "fs", "up", "fu"}));
-  iv->PROGRAMMER(auto ebp_ = global::cs.generate_unique_string("pr_regs");
-                 EG->bss(ebp_, ebp, global::cs.generate_unique_number("fctx")); EG->f(fl, "mov_smd_rd", EG->g(ebp_), "-",
-                                           VARS["a"], VARS["r"]);
-                 EG->fr(ebp_););
+  iv->PROGRAMMER(
+      auto ebp_ = global::cs.generate_unique_string("pr_regs");
+      EG->bss(ebp_, ebp, global::cs.generate_unique_number("fctx"));
+      EG->f(fl, "mov_smd_rd", EG->g(ebp_), "-", VARS["a"], VARS["r"]);
+      EG->fr(ebp_););
   // store_rd end
 
   // store_rb begin
@@ -1824,7 +1864,8 @@ void i686::init_invariants() {
 
   iv = make_invariant(cf);
   iv->copy_flags(gg({"st", "ss", "fs", "up", "fu"}));
-  iv->PROGRAMMER(EG->ta(CAST, "nasm", "push DWORD [", VARS["r1"], ":", VARS["r2"], "]"););
+  iv->PROGRAMMER(
+      EG->ta(CAST, "olly", "push DWORD [", VARS["r1"], ":", VARS["r2"], "]"););
   // push_serd_rd end
 
   // push end
@@ -1871,7 +1912,8 @@ void i686::init_invariants() {
 
   iv = make_invariant(cf);
   iv->copy_flags(gg({"st", "ss", "fs", "up", "fu"}));
-  iv->PROGRAMMER(EG->ta(CAST, "nasm", "pop DWORD [", VARS["r1"], ":", VARS["r2"], "]"););
+  iv->PROGRAMMER(
+      EG->ta(CAST, "olly", "pop DWORD [", VARS["r1"], ":", VARS["r2"], "]"););
   // pop_serd_rd end
 
   // pop end
@@ -1969,7 +2011,8 @@ void i686::init_invariants() {
 
   iv = make_invariant(cf);
   iv->copy_flags(gg({"st", "ss", "fs", "up", "fu"}));
-  iv->PROGRAMMER(EG->t(CAST, "mov DWORD [", VARS["r1"], "],", VARS["r2"]););
+  iv->PROGRAMMER(
+      EG->ta(CAST, "olly", "mov DWORD [", VARS["r1"], "],", VARS["r2"]););
   // mov_md_rd end
 
   // mov_mw_rw begin
@@ -2026,7 +2069,7 @@ void i686::init_invariants() {
 
   iv = make_invariant(cf);
   iv->copy_flags(gg({"st", "ss", "fs", "up", "fu"}));
-  iv->PROGRAMMER(EG->ta(CAST, "nasm", "mov ", VARS["r1"], ", DWORD [",
+  iv->PROGRAMMER(EG->ta(CAST, "olly", "mov ", VARS["r1"], ", DWORD [",
                         VARS["sr"], ":", VARS["r2"], "]"););
   // mov_rd_serd end
 
@@ -2038,7 +2081,7 @@ void i686::init_invariants() {
 
   iv = make_invariant(cf);
   iv->copy_flags(gg({"st", "ss", "fs", "up", "fu"}));
-  iv->PROGRAMMER(EG->ta(CAST, "nasm", "mov DWORD [", VARS["sr"], ":",
+  iv->PROGRAMMER(EG->ta(CAST, "olly", "mov DWORD [", VARS["sr"], ":",
                         VARS["r1"], "], ", VARS["r2"]););
   // mov_serd_rd end
 
@@ -2142,7 +2185,7 @@ void i686::init_invariants() {
 
   iv = make_invariant(cf);
   iv->copy_flags(gg({"st", "ss", "fs", "up", "fu"}));
-  iv->PROGRAMMER(EG->ta(CAST, "nasm", "movzx ", VARS["r1"], ",", VARS["r2"]););
+  iv->PROGRAMMER(EG->ta(CAST, "olly", "movzx ", VARS["r1"], ",", VARS["r2"]););
   // movzx_rd_rb end
 
   // movzx_rd_mw begin
@@ -2189,7 +2232,7 @@ void i686::init_invariants() {
   cf->add_argument("a", 32);
 
   iv = make_invariant(cf);
-  iv->copy_flags(gg({"st", "ss", "fs", "up", "fu"}));
+  iv->copy_flags(gg({"st", "ss", "fs", "up", "fu", "sh"}));
   iv->PROGRAMMER(EG->t(CAST, "call ", VARS["a"]););
   // call_vd end
 
@@ -2232,7 +2275,7 @@ void i686::init_invariants() {
   cf->add_argument("a", 32);
 
   iv = make_invariant(cf);
-  iv->copy_flags(gg({"ss", "fs", "up", "fu"}));
+  iv->copy_flags(gg({"ss", "fs", "up", "fu", "sh"}));
   iv->PROGRAMMER(EG->t(CAST, "jmp ", VARS["a"]););
   // jmp_vd end
 
@@ -2276,7 +2319,7 @@ void i686::init_invariants() {
   cf->add_argument("a", 32);
 
   iv = make_invariant(cf);
-  iv->copy_flags(gg({"ss", "fs", "up", "fu"}));
+  iv->copy_flags(gg({"ss", "fs", "up", "fu", "sh"}));
   iv->PROGRAMMER(EG->t(CAST, "j", VARS["f"], " ", VARS["a"]););
   // jxx_vd end
 
@@ -2354,7 +2397,7 @@ void i686::init_invariants() {
   iv = make_invariant(cf);
   iv->copy_flags(gg({"st", "fs", "ss", "up", "fu"}));
   iv->PROGRAMMER(
-      EG->ta(CAST, "nasm", "add ", VARS["r1"], ", DWORD [", VARS["r2"], "]"););
+      EG->ta(CAST, "olly", "add ", VARS["r1"], ", DWORD [", VARS["r2"], "]"););
   // add_rd_md end
 
   // add_rd_smd begin
@@ -2366,7 +2409,7 @@ void i686::init_invariants() {
 
   iv = make_invariant(cf);
   iv->copy_flags(gg({"ss", "fs", "up", "fu"}));
-  iv->PROGRAMMER(EG->ta(CAST, "nasm", "add ", VARS["r1"], ", DWORD [",
+  iv->PROGRAMMER(EG->ta(CAST, "olly", "add ", VARS["r1"], ", DWORD [",
                         VARS["r2"], VARS["sign"], VARS["a"], "]"););
   // add_rd_smd end
 
@@ -2734,7 +2777,7 @@ void i686::init_invariants() {
   iv = make_invariant(cf);
   iv->copy_flags(gg({"st", "fs", "ss", "up", "fu"}));
   iv->PROGRAMMER(
-      EG->ta(CAST, "nasm", "xor ", VARS["r1"], ", DWORD [", VARS["r2"], "]"););
+      EG->ta(CAST, "olly", "xor ", VARS["r1"], ", DWORD [", VARS["r2"], "]"););
   // xor_rd_md end
 
   // xor_rd_smd begin
@@ -3090,7 +3133,7 @@ void i686::init_invariants() {
   iv = make_invariant(cf);
   iv->set_flag(type_flags::stack_safe);
   iv->copy_flags(gg({"ss", "fs", "up", "fu"}));
-  iv->PROGRAMMER(EG->ta(CAST, "nasm", "and ", VARS["r"], ",", VARS["a"]););
+  iv->PROGRAMMER(EG->ta(CAST, "olly", "and ", VARS["r"], ",", VARS["a"]););
   // and_rd_vd end
 
   // and_rd_md begin
@@ -3544,7 +3587,7 @@ void i686::init_invariants() {
 
   iv = make_invariant(cf);
   iv->copy_flags(gg({"ss", "fs", "up", "fu"}));
-  iv->PROGRAMMER(EG->ta(CAST, "nasm", "cmp ", VARS["r1"], ", DWORD [",
+  iv->PROGRAMMER(EG->ta(CAST, "olly", "cmp ", VARS["r1"], ", DWORD [",
                         VARS["r2"], VARS["sign"], VARS["a"], "]"););
   // cmp_rd_smd end
 
@@ -3763,7 +3806,7 @@ void i686::init_invariants() {
   iv = make_invariant(cf);
   iv->copy_flags(gg({"ss", "fs", "up", "fu"}));
   iv->PROGRAMMER(
-      EG->ta(CAST, "nasm", "test DWORD [", VARS["r"], "],", VARS["a"]););
+      EG->ta(CAST, "olly", "test DWORD [", VARS["r"], "],", VARS["a"]););
   // test_md_vd end
 
   // test_smd_vd begin
@@ -3775,7 +3818,7 @@ void i686::init_invariants() {
 
   iv = make_invariant(cf);
   iv->copy_flags(gg({"ss", "fs", "up", "fu"}));
-  iv->PROGRAMMER(EG->ta(CAST, "nasm", "test DWORD [", VARS["r"], VARS["sign"],
+  iv->PROGRAMMER(EG->ta(CAST, "olly", "test DWORD [", VARS["r"], VARS["sign"],
                         VARS["a1"], "],", VARS["a2"]););
   // test_smd_vd end
 
@@ -3796,7 +3839,7 @@ void i686::init_invariants() {
 
   iv = make_invariant(cf);
   iv->copy_flags(gg({"ss", "fs", "up", "fu"}));
-  iv->PROGRAMMER(EG->ta(CAST, "nasm", "test ", VARS["r"], ",", VARS["a"]););
+  iv->PROGRAMMER(EG->ta(CAST, "olly", "test ", VARS["r"], ",", VARS["a"]););
   // test_rb_vb end
 
   // test_rb_mb begin
@@ -3854,7 +3897,7 @@ void i686::init_invariants() {
   iv = make_invariant(cf);
   iv->copy_flags(gg({"ss", "fs", "up", "fu"}));
   iv->PROGRAMMER(
-      EG->ta(CAST, "nasm", "test BYTE [", VARS["r"], "],", VARS["a"]););
+      EG->ta(CAST, "olly", "test BYTE [", VARS["r"], "],", VARS["a"]););
   // test_mb_vb end
 
   // test_smb_vb begin
@@ -3866,7 +3909,7 @@ void i686::init_invariants() {
 
   iv = make_invariant(cf);
   iv->copy_flags(gg({"ss", "fs", "up", "fu"}));
-  iv->PROGRAMMER(EG->ta(CAST, "nasm", "test BYTE [", VARS["r"], VARS["sign"],
+  iv->PROGRAMMER(EG->ta(CAST, "olly", "test BYTE [", VARS["r"], VARS["sign"],
                         VARS["a1"], "],", VARS["a2"]););
   // test_smb_vb end
 
@@ -3911,7 +3954,7 @@ void i686::init_invariants() {
 
   iv = make_invariant(cf);
   iv->copy_flags(gg({"ss", "fs", "up", "fu"}));
-  iv->PROGRAMMER(EG->ta(CAST, "nasm", "shl ", VARS["r"], ",", VARS["a"]););
+  iv->PROGRAMMER(EG->ta(CAST, "olly", "shl ", VARS["r"], ",", VARS["a"]););
   // shl_rw_vb end
 
   // shl_rb_vb begin

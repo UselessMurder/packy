@@ -73,7 +73,7 @@ var *frame::get_var(std::string var_name) {
   if (vars.count(var_name) < 1)
     throw std::invalid_argument(
         "Variable with name: " + var_name +
-        " is not exists if frame with id: " + std::to_string(get_object_id()));
+        " is not exists in frame with id: " + std::to_string(get_object_id()));
   return &vars[var_name];
 }
 

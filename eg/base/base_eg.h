@@ -6,6 +6,7 @@
 #include <eg/base/frame.h>
 #include <eg/base/machine_state.h>
 #include <r_asm.h>
+#include <r_lib.h>
 
 namespace eg {
 
@@ -158,6 +159,16 @@ class build_branch : public node, public printable_object {
   std::string to_string();
 };
 
+class trash_branch : public node {
+private:
+  std::unordered_map<uint64_t, node *> childs_cache;
+public:
+  trash_branch(node *parent);
+  ~trash_branch();
+  void grab_node(node *child_node);
+  void free_node(node *child_node);
+};
+
 class build_root : public node,
                    public loop_guard,
                    public key_value_storage,
@@ -169,12 +180,15 @@ class build_root : public node,
  protected:
   build_states self_state;
   std::vector<memory_piece *> build_sequence;
-  std::map<std::string, RAsm *> assemblers;
+  RLib *r_lib;
   std::uint64_t base;
   std::uint64_t stub_size;
   std::map<std::string, std::pair<std::string, uint64_t>> fake_registers;
   std::map<uint64_t, std::set<std::string>> fake_contexts;
 
+  #ifdef USE_CACHE
+  std::map<std::string, form *> form_cache;
+  #endif
 
   virtual void init_assemblers() = 0;
   virtual void init_invariants() = 0;
@@ -195,6 +209,9 @@ class build_root : public node,
   invariant *make_invariant(form *blank);
 
  public:
+
+  std::map<std::string, RAsm *> assemblers;
+
   build_root();
   virtual ~build_root();
 
@@ -220,7 +237,7 @@ class build_root : public node,
   std::uint64_t get_base();
 
   void get_depended_memory(std::string memory_name,
-                           std::function<void(memory_piece *mp)> getter,
+                           std::function<void(memory_piece *mp)> &getter,
                            global::flag_container flags);
 
   void end();

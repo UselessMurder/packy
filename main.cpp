@@ -1,4 +1,5 @@
-// This is an open source non-commercial project. Dear PVS-Studio, please check it.
+// This is an open source non-commercial project. Dear PVS-Studio, please check
+// it.
 
 // PVS-Studio Static Code Analyzer for C, C++ and C#: http://www.viva64.com
 
@@ -46,8 +47,7 @@ int main(std::int32_t argc, char *argv[]) {
     if (!p.pack()) {
       printf("	Packing error:\n reason: %s\n", p.why().c_str());
       try {
-        if (boost::filesystem::exists(dest))
-          boost::filesystem::remove(dest);
+        if (std_fs::exists(dest)) std_fs::remove(dest);
       } catch (std_fs::filesystem_error &er) {
         printf("Remove file error:\n %s\n", er.what());
       }

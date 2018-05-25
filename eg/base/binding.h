@@ -87,7 +87,8 @@ enum nf : std::uint8_t {
   debug_unprotected = 30,
   will_balanced = 31,
   do_not_use_shift = 32,
-  full_processed = 33
+  full_processed = 33,
+  use_shift = 34
 };
 }
 
@@ -111,7 +112,7 @@ class node : public global_object, public global::flag_container {
  protected:
   node *parent_node;
   std::vector<node *> childs;
-  
+
   node *last_current;
 
   std::unordered_set<std::uint64_t> contexts;
@@ -137,7 +138,7 @@ class node : public global_object, public global::flag_container {
   virtual void free_node(node *child_node);
   virtual void set_parent(node *current_parent);
 
-  bool run_functor(std::function<bool(node *, std::uint64_t)> functor,
+  bool run_functor(std::function<bool(node *, std::uint64_t)> &functor,
                    global::flag_container flags, std::uint64_t ctx);
 
   void bind_recall(std::uint64_t ctx);
@@ -168,15 +169,16 @@ template <typename T>
 T *find_node_by_flag(node *current_node, std::uint8_t node_flag,
                      global::flag_container search_flags) {
   node *n;
-  bool ok = current_node->run_functor(
+  std::function<bool(node *, std::uint64_t)> fn =
       [&n, &node_flag](node *current_node, std::uint64_t ctx) -> bool {
-        if (current_node->check_flag(node_flag)) {
-          n = current_node;
-          return true;
-        }
-        return false;
-      },
-      search_flags, global::cs.generate_unique_number("ctx"));
+    if (current_node->check_flag(node_flag)) {
+      n = current_node;
+      return true;
+    }
+    return false;
+  };
+  bool ok = current_node->run_functor(fn, search_flags,
+                                      global::cs.generate_unique_number("ctx"));
   if (!ok)
     throw std::domain_error("Cant`t find node by flag: " +
                             std::to_string(node_flag));
@@ -188,15 +190,17 @@ template <typename T>
 T *find_node_by_flags(node *current_node, global::flag_container node_flags,
                       global::flag_container search_flags) {
   node *n;
-  bool ok = current_node->run_functor(
+
+  std::function<bool(node *, std::uint64_t)> fn =
       [&n, &node_flags](node *current_node, std::uint64_t ctx) -> bool {
-        if (current_node->is_match(node_flags)) {
-          n = current_node;
-          return true;
-        }
-        return false;
-      },
-      search_flags, global::cs.generate_unique_number("ctx"));
+    if (current_node->is_match(node_flags)) {
+      n = current_node;
+      return true;
+    }
+    return false;
+  };
+  bool ok = current_node->run_functor(fn, search_flags,
+                                      global::cs.generate_unique_number("ctx"));
   if (!ok)
     throw std::domain_error("Cant`t find node by flags: " +
                             node_flags.flags_to_string());
@@ -218,10 +222,10 @@ class current_cache {
 };
 
 class name_cache {
-private:
-  std::map<std::string, node*> named_nodes;
+ private:
+  std::map<std::string, node *> named_nodes;
 
-public:
+ public:
   name_cache();
   ~name_cache();
 
@@ -238,9 +242,9 @@ extern node *global_root;
 template <typename T>
 T *find_node_by_name(node *current_node, std::string name,
                      global::flag_container search_flags) {
-  #ifdef USE_CACHE
-    return node_cast<T>(global_name_cache.get_node_by_name(name));
-  #elif
+#ifdef USE_CACHE
+  return node_cast<T>(global_name_cache.get_node_by_name(name));
+#elif
   node *n;
   bool ok = current_node->run_functor(
       [&n, &name](node *current_node, std::uint64_t ctx) -> bool {
@@ -254,7 +258,7 @@ T *find_node_by_name(node *current_node, std::string name,
   if (!ok) throw std::domain_error("Cant`t find node by name: " + name);
 
   return node_cast<T>(n);
- #endif
+#endif
 }
 
 class loop_guard {

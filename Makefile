@@ -19,9 +19,10 @@ else
 endif
 
 INC_DIR += -I$(MKFILE_PATH)
-INC_DIR += -I$(MKFILE_PATH)include
+#INC_DIR += -I$(MKFILE_PATH)include
+INC_DIR += -I/usr/include/libr
 LIBS += -L/usr/lib
-LIBS += -lr_asm
+LIBS += -lr_asm -lr_util
 LIBS += -lpthread
 #LIBS += -llibboost_filesystem-mt
 LIBS += -lboost_filesystem

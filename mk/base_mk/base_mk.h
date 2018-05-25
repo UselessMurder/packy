@@ -12,6 +12,7 @@ class trap : public global::tag_container {
 private:
   std::function<void(eg::key_value_storage &values, global::flag_container flags)> body;
 public:
+  uint64_t id;
   trap();
   trap(std::function<void(eg::key_value_storage &values, global::flag_container flags)> current_body);
   void set_body(std::function<void(eg::key_value_storage &values, global::flag_container flags)> current_body);

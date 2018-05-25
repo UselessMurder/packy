@@ -6,6 +6,8 @@
 #include <cry/crypto.h>
 #include <mk/pe32_i686/pe32_i686.h>
 
+#define CHECK_DEBUGGER
+
 namespace mk {
 pe32_i686::pe32_i686() : base_mk() {
   tls_rva = 0;
@@ -14,6 +16,7 @@ pe32_i686::pe32_i686() : base_mk() {
   export_rva = 0;
   reloc_directory_params.first = 0;
   reloc_directory_params.second = 0;
+  api_flag = false;
   init_traps();
 }
 pe32_i686::pe32_i686(fs::out_file *out_file) : base_mk(out_file) {
@@ -23,6 +26,7 @@ pe32_i686::pe32_i686(fs::out_file *out_file) : base_mk(out_file) {
   export_rva = 0;
   reloc_directory_params.first = 0;
   reloc_directory_params.second = 0;
+  api_flag = false;
   init_traps();
 }
 pe32_i686::~pe32_i686() {}
@@ -38,6 +42,8 @@ bool pe32_i686::ok_loader(ld::loader_types current_loader) {
   if (ld::loader_types::pe32 == current_loader) return true;
   return false;
 }
+
+bool pe32_i686::is_api_configured() { return api_flag; }
 
 std::uint32_t pe32_i686::get_KERNEL32_hash() {
   std::vector<std::uint8_t> kernel32 = {0x4b, 0x45, 0x52, 0x4e, 0x45,
@@ -89,12 +95,13 @@ std::uint32_t pe32_i686::get_GetProcAddress_hash() {
   return result;
 }
 
-std::uint32_t pe32_i686::get_ExitProcess_hash() {
-  std::vector<std::uint8_t> exitprocess = {0x45, 0x78, 0x69, 0x74, 0x50, 0x72,
-                                           0x6f, 0x63, 0x65, 0x73, 0x73, 0x0};
-  std::uint32_t result = get_KERNEL32_hash();
+std::uint32_t pe32_i686::get_NtTerminateProcess_hash() {
+  std::vector<std::uint8_t> ntterminateprocess = {
+      0x4e, 0x74, 0x54, 0x65, 0x72, 0x6d, 0x69, 0x6e, 0x61, 0x74,
+      0x65, 0x50, 0x72, 0x6f, 0x63, 0x65, 0x73, 0x73, 0x0};
+  std::uint32_t result = get_NTDLL_hash();
   cry::crc32 c;
-  c.set(exitprocess);
+  c.set(ntterminateprocess);
   result += c.get();
   return result;
 }
@@ -155,6 +162,37 @@ std::uint32_t pe32_i686::get_SetThreadContext_hash() {
   return result;
 }
 
+std::uint32_t pe32_i686::get_CreateThread_hash() {
+  std::vector<std::uint8_t> createthread = {0x43, 0x72, 0x65, 0x61, 0x74,
+                                            0x65, 0x54, 0x68, 0x72, 0x65,
+                                            0x61, 0x64, 0x0};
+  std::uint32_t result = get_KERNEL32_hash();
+  cry::crc32 c;
+  c.set(createthread);
+  result += c.get();
+  return result;
+}
+
+std::uint32_t pe32_i686::get_NtSetInformationThread_hash() {
+  std::vector<std::uint8_t> ntsetinformationthread = {
+      0x4e, 0x74, 0x53, 0x65, 0x74, 0x49, 0x6e, 0x66, 0x6f, 0x72, 0x6d, 0x61,
+      0x74, 0x69, 0x6f, 0x6e, 0x54, 0x68, 0x72, 0x65, 0x61, 0x64, 0x0};
+  std::uint32_t result = get_NTDLL_hash();
+  cry::crc32 c;
+  c.set(ntsetinformationthread);
+  result += c.get();
+  return result;
+}
+
+std::uint32_t pe32_i686::get_Sleep_hash() {
+  std::vector<std::uint8_t> sleep = {0x53, 0x6c, 0x65, 0x65, 0x70, 0x0};
+  std::uint32_t result = get_KERNEL32_hash();
+  cry::crc32 c;
+  c.set(sleep);
+  result += c.get();
+  return result;
+}
+
 void pe32_i686::init_traps() {
   // integrity_check
   add_trap("integrity_check",
@@ -174,7 +212,8 @@ void pe32_i686::init_traps() {
              e.f(fl, "push_rd", e.g(tmp_1));
              e.f(fl, "push_rd", e.g(tmp_2));
              e.f(fl, "load_rd", e.g(tmp_2), e.vshd("result"));
-             e.f(fl, "mov_rd_vd", e.g(tmp_1), e.c32d("begin", {}));
+             e.f(fl, "mov_rd_vd", e.g(tmp_1),
+                 e.c32d(values.get_value<std::string>("target"), {}));
              e.f(fl, "cmp_rd_rd", e.g(tmp_1), e.g(tmp_2));
              auto new_fl = fl;
              new_fl.set_flag(eg::type_flags::flag_safe);
@@ -187,7 +226,7 @@ void pe32_i686::init_traps() {
              e.end();
              e.start_segment(seg1);
            });
-  add_tags_to_trap("integrity_check", {"all", "with_target"});
+  add_tags_to_trap("integrity_check", {"all", "unapi"});
 
   // IsDebbugerPresent
   add_trap("is_debbuger_present",
@@ -214,7 +253,8 @@ void pe32_i686::init_traps() {
              e.end();
              e.start_segment(seg1);
            });
-  add_tags_to_trap("is_debbuger_present", {"all", "undep"});
+  add_tags_to_trap("is_debbuger_present",
+                   {"all", "undep", "unapi", "without_target"});
 
   // NtGlobalFlag
   add_trap("nt_global_flag",
@@ -241,7 +281,8 @@ void pe32_i686::init_traps() {
              e.end();
              e.start_segment(seg1);
            });
-  add_tags_to_trap("nt_global_flag", {"all", "undep"});
+  add_tags_to_trap("nt_global_flag",
+                   {"all", "undep", "unapi", "without_target"});
 
   // HeapFlags
   add_trap("heap_flags",
@@ -313,86 +354,60 @@ void pe32_i686::init_traps() {
              e.fr(tmp_1);
              e.fr(tmp_2);
            });
-  add_tags_to_trap("heap_flags", {"all"});
+  add_tags_to_trap("heap_flags", {"all", "without_target"});
 
   // TF_check
-  add_trap("tf_check", [this](eg::key_value_storage &values,
-                              global::flag_container fl) {
-    auto over = global::cs.generate_unique_string("usegment");
-    auto end = global::cs.generate_unique_string("usegment");
-    auto tf_seh_handler = global::cs.generate_unique_string("usegment");
-    auto tmp_2 = global::cs.generate_unique_string("pr_regs");
-    auto tmp_1 = global::cs.generate_unique_string("pr_regs");
-    auto debug_flag = global::cs.generate_unique_string("udata");
-    auto esp_ = global::cs.generate_unique_string("pr_regs");
-    auto fctx = global::cs.generate_unique_number("fctx");
-    auto fs_ = global::cs.generate_unique_string("pr_regs");
-    e.bs(tmp_1, "common", fctx);
-    e.bss(esp_, eg::i8086::esp, fctx);
-    e.bss(fs_, eg::i8086::fs, fctx);
-    e.f(fl, "push_rd", e.g(tmp_1));
-    e.f(fl, "abs_r", e.g(tmp_1), e.shd(debug_flag));
-    e.f(fl, "mov_mb_vb", e.g(tmp_1), std::uint64_t(1));
-    e.f(fl, "abs_r", e.g(tmp_1), e.shd(tf_seh_handler));
-    e.f(fl, "push_rd", e.g(tmp_1));
-    e.f(fl, "clear_rd", e.g(tmp_1));
-    e.f(fl, "push_serd", e.g(fs_), e.g(tmp_1));
-    auto new_fl = fl;
-    new_fl.set_flag(eg::type_flags::stack_safe);
-    e.f(new_fl, "mov_serd_rd", e.g(fs_), e.g(tmp_1), e.g(esp_));
-    e.f(fl, "push_fd");
-    e.f(new_fl, "or_md_vd", e.g(esp_), std::uint64_t(0x100));
-    e.f(fl, "pop_fd");
-    e.f(fl, "nop");
-    e.f(new_fl, "mov_rd_md", e.g(tmp_1), e.g(esp_));
-    e.bs(tmp_2, "common", fctx);
-    e.f(fl, "clear_rd", e.g(tmp_2));
-    e.f(fl, "mov_serd_rd", e.g(fs_), e.g(tmp_2), e.g(tmp_1));
-    e.fr(tmp_2);
-    e.fr(fs_);
-    e.f(fl, "add_rd_vd", e.g(esp_), std::uint64_t(8));
-    e.fr(esp_);
-    e.f(fl, "abs_r", e.g(tmp_1), e.shd(debug_flag));
-    e.f(fl, "cmp_mb_vb", e.g(tmp_1), std::uint64_t(0));
-    e.f(fl, "branch", "e", e.shd(end), e.shd(over));
-    e.end();
+  add_trap("tf_check",
+           [this](eg::key_value_storage &values, global::flag_container fl) {
+             auto over = global::cs.generate_unique_string("usegment");
+             auto end = global::cs.generate_unique_string("usegment");
+             auto tmp_1 = global::cs.generate_unique_string("pr_regs");
+             auto esp_ = global::cs.generate_unique_string("pr_regs");
+             auto fs_ = global::cs.generate_unique_string("pr_regs");
 
-    e.add_data(debug_flag, 1);
+             eg::key_value_storage ectx;
+             init_ectx(ectx);
+             ectx.set_value("fl", fl);
+             auto fctx = ectx.get_value<uint64_t>("fctx");
 
-    e.start_segment(tf_seh_handler);
-    e.group_save("common", fctx);
-    e.free_group("common");
-    e.grab_group("common");
-    e.bs(tmp_2, "common", fctx);
-    e.bss(esp_, eg::i8086::esp, fctx);
-    e.f(e.gg({"fu"}), "push_rd", e.g(tmp_2));
-    e.f(e.gg({"fu", "ss"}), "mov_rd_rd", e.g(tmp_2), e.g(esp_));
-    e.fr(esp_);
-    e.f(e.gg({"fu"}), "add_rd_vd", e.g(tmp_2), std::uint64_t(0x10));
-    e.f(e.gg({"fu"}), "mov_rd_md", e.g(tmp_2), e.g(tmp_2));
-    e.f(e.gg({"fu"}), "add_rd_vd", e.g(tmp_2), std::uint64_t(0xB8));
-    e.f(e.gg({"fu"}), "inc_md", e.g(tmp_2));
-    e.f(e.gg({"fu"}), "abs_r", e.g(tmp_2), e.shd(debug_flag));
-    e.f(e.gg({"fu"}), "mov_mb_vb", e.g(tmp_2), std::uint64_t(0));
-    e.f(e.gg({"fu"}), "pop_rd", e.g(tmp_2));
-    e.fr(tmp_2);
-    e.bss(tmp_2, eg::i8086::eax, fctx);
-    e.f(e.gg({"fu"}), "clear_rd", e.g(tmp_2));
-    e.fr(tmp_2);
-    e.f(e.gg({"fu"}), "ret");
-    e.group_load("common", fctx);
-    e.end();
+             e.bs(tmp_1, "common", fctx);
+             e.f(fl, "push_rd", e.g(tmp_1));
+             e.f(fl, "abs_r", e.g(tmp_1),
+                 e.shd(ectx.get_value<std::string>("flag_name")));
+             e.f(fl, "mov_mb_vb", e.g(tmp_1), std::uint64_t(1));
+             exception_prologue(ectx);
 
-    e.start_segment(over);
-    e.f(fl, "pop_rd", e.g(tmp_1));
-    e.f(fl, "jump", e.shd(values.get_value<std::string>("if_error")));
-    e.end();
+             e.f(fl, "push_fd");
+             auto new_fl = fl;
+             new_fl.set_flag(eg::type_flags::stack_safe);
+             e.bss(esp_, eg::i8086::esp, fctx);
+             e.f(new_fl, "or_md_vd", e.g(esp_), std::uint64_t(0x100));
+             e.fr(esp_);
+             e.f(fl, "pop_fd");
+             e.f(fl, "nop");
+             e.end();
 
-    e.start_segment(end);
-    e.f(fl, "pop_rd", e.g(tmp_1));
-    e.fr(tmp_1);
-  });
-  add_tags_to_trap("tf_check", {"all", "undep"});
+             exception_epilogue(ectx);
+             e.f(fl, "abs_r", e.g(tmp_1),
+                 e.shd(ectx.get_value<std::string>("flag_name")));
+             e.f(fl, "cmp_mb_vb", e.g(tmp_1), std::uint64_t(0));
+             e.f(fl, "branch", "e", e.shd(end), e.shd(over));
+             e.end();
+
+             e.add_data(ectx.get_value<std::string>("flag_name"), 1);
+
+             insert_except_handler(ectx);
+
+             e.start_segment(over);
+             e.f(fl, "pop_rd", e.g(tmp_1));
+             e.f(fl, "jump", e.shd(values.get_value<std::string>("if_error")));
+             e.end();
+
+             e.start_segment(end);
+             e.f(fl, "pop_rd", e.g(tmp_1));
+             e.fr(tmp_1);
+           });
+  add_tags_to_trap("tf_check", {"all", "undep", "unapi", "without_target"});
 
   // remote_debugger_present
   add_trap("remote_debugger_present", [this](eg::key_value_storage &values,
@@ -448,7 +463,7 @@ void pe32_i686::init_traps() {
     e.fr(eax_);
     e.fr(tmp_1);
   });
-  add_tags_to_trap("remote_debugger_present", {"all"});
+  add_tags_to_trap("remote_debugger_present", {"all", "without_target"});
 
   // debug_object_handle
   add_trap("debug_object_handle", [this](eg::key_value_storage &values,
@@ -504,7 +519,7 @@ void pe32_i686::init_traps() {
     e.fr(eax_);
     e.fr(tmp_1);
   });
-  add_tags_to_trap("debug_object_handle", {"all"});
+  add_tags_to_trap("debug_object_handle", {"all", "without_target"});
 
   // process_debug_flags
   add_trap("process_debug_flags", [this](eg::key_value_storage &values,
@@ -560,7 +575,7 @@ void pe32_i686::init_traps() {
     e.fr(eax_);
     e.fr(tmp_1);
   });
-  add_tags_to_trap("process_debug_flags", {"all"});
+  add_tags_to_trap("process_debug_flags", {"all", "without_target"});
 
   // check_thread_ctx
   add_trap("check_thread_ctx",
@@ -625,7 +640,7 @@ void pe32_i686::init_traps() {
              e.fr(tmp_1);
              e.fr(tmp_2);
            });
-  add_tags_to_trap("check_thread_ctx", {"all"});
+  add_tags_to_trap("check_thread_ctx", {"all", "without_target"});
 
   // reset_thread_ctx
   add_trap("reset_thread_ctx",
@@ -661,11 +676,139 @@ void pe32_i686::init_traps() {
              e.fr(eax_);
              e.fr(tmp_1);
            });
-  add_tags_to_trap("reset_thread_ctx", {"all"});
+  add_tags_to_trap("reset_thread_ctx", {"all", "without_target"});
+}
+
+void pe32_i686::init_ectx(eg::key_value_storage &ectx) {
+  ectx.set_value("fctx", global::cs.generate_unique_number("fctx"));
+  ectx.set_value("handler_name", global::cs.generate_unique_string("usegment"));
+  ectx.set_value("epilogue_name",
+                 global::cs.generate_unique_string("usegment"));
+  ectx.set_value("flag_name", global::cs.generate_unique_string("udata"));
+}
+
+void pe32_i686::exception_prologue(eg::key_value_storage &ectx) {
+  auto fl = ectx.get_value<global::flag_container>("fl");
+  auto new_fl = fl;
+  new_fl.set_flag(eg::type_flags::stack_safe);
+  auto tmp_1 = global::cs.generate_unique_string("pr_regs");
+  auto tmp_2 = global::cs.generate_unique_string("pr_regs");
+  auto esp_ = global::cs.generate_unique_string("pr_regs");
+  auto fs_ = global::cs.generate_unique_string("pr_regs");
+  auto fctx = ectx.get_value<uint64_t>("fctx");
+  e.bs(tmp_1, "common", fctx);
+  e.bs(tmp_2, "common", fctx);
+  e.bss(esp_, eg::i8086::esp, fctx);
+  e.bss(fs_, eg::i8086::fs, fctx);
+  e.f(fl, "push_rd", e.g(tmp_1));
+  e.f(fl, "push_rd", e.g(tmp_2));
+  e.f(fl, "abs_r", e.g(tmp_1),
+      e.shd(ectx.get_value<std::string>("handler_name")));
+  e.f(fl, "push_rd", e.g(tmp_1));
+  e.f(fl, "clear_rd", e.g(tmp_1));
+  e.f(fl, "push_serd", e.g(fs_), e.g(tmp_1));
+  e.f(new_fl, "mov_serd_rd", e.g(fs_), e.g(tmp_1), e.g(esp_));
+  ectx.set_value("tmp_1", tmp_1);
+  ectx.set_value("tmp_2", tmp_2);
+  e.fr(esp_);
+  e.fr(fs_);
+}
+
+void pe32_i686::exception_epilogue(eg::key_value_storage &ectx) {
+  auto fl = ectx.get_value<global::flag_container>("fl");
+  auto new_fl = fl;
+  new_fl.set_flag(eg::type_flags::stack_safe);
+  auto tmp_2 = ectx.get_value<std::string>("tmp_2");
+  auto tmp_1 = ectx.get_value<std::string>("tmp_1");
+  auto esp_ = global::cs.generate_unique_string("pr_regs");
+  auto fs_ = global::cs.generate_unique_string("pr_regs");
+  auto fctx = ectx.get_value<uint64_t>("fctx");
+  e.start_segment(ectx.get_value<std::string>("epilogue_name"));
+  e.bss(esp_, eg::i8086::esp, fctx);
+  e.bss(fs_, eg::i8086::fs, fctx);
+  e.f(new_fl, "mov_rd_md", e.g(tmp_1), e.g(esp_));
+  e.f(fl, "clear_rd", e.g(tmp_2));
+  e.f(fl, "mov_serd_rd", e.g(fs_), e.g(tmp_2), e.g(tmp_1));
+  e.fr(fs_);
+  e.f(fl, "add_rd_vd", e.g(esp_), std::uint64_t(8));
+  e.f(fl, "pop_rd", e.g(tmp_2));
+  e.f(fl, "pop_rd", e.g(tmp_1));
+  e.fr(tmp_1);
+  e.fr(tmp_2);
+  e.fr(esp_);
+}
+
+void pe32_i686::insert_except_handler(eg::key_value_storage &ectx) {
+  auto fctx = global::cs.generate_unique_number("fctx");
+  auto esp_ = global::cs.generate_unique_string("pr_regs");
+  auto tmp_1 = global::cs.generate_unique_string("pr_regs");
+  auto tmp_2 = global::cs.generate_unique_string("pr_regs");
+  auto set_and_exit = global::cs.generate_unique_string("usegment");
+  auto exit = global::cs.generate_unique_string("usegment");
+  e.start_segment(ectx.get_value<std::string>("handler_name"));
+  e.group_save("common", fctx);
+  e.free_group("common");
+  e.grab_group("common");
+  e.bs(tmp_2, "common", fctx);
+  e.bs(tmp_1, "common", fctx);
+  e.bss(esp_, eg::i8086::esp, fctx);
+  e.f(e.gg({"fu"}), "push_rd", e.g(tmp_2));
+  e.f(e.gg({"fu", "ss"}), "mov_rd_rd", e.g(tmp_2), e.g(esp_));
+  e.f(e.gg({"fu"}), "push_rd", e.g(tmp_1));
+  e.fr(esp_);
+
+  e.f(e.gg({"fu"}), "add_rd_vd", e.g(tmp_2), std::uint64_t(0x10));
+  e.f(e.gg({"fu"}), "mov_rd_md", e.g(tmp_2), e.g(tmp_2));
+  e.f(e.gg({"fu"}), "add_rd_vd", e.g(tmp_2), std::uint64_t(0xB8));
+  e.f(e.gg({"fu"}), "abs_r", e.g(tmp_1),
+      e.shd(ectx.get_value<std::string>("epilogue_name")));
+  e.f(e.gg({"fu"}), "mov_md_rd", e.g(tmp_2), e.g(tmp_1));
+  e.f(e.gg({"fu"}), "clear_rd", e.g(tmp_1));
+  e.f(e.gg({"fu"}), "sub_rd_vd", e.g(tmp_2), std::uint64_t(0xA8));
+  e.f(e.gg({"fu"}), "or_rd_md", e.g(tmp_1), e.g(tmp_2));
+  for (uint8_t i = 0; i < 3; i++) {
+    e.f(e.gg({"fu"}), "sub_rd_vd", e.g(tmp_2), std::uint64_t(4));
+    e.f(e.gg({"fu"}), "or_rd_md", e.g(tmp_1), e.g(tmp_2));
+  }
+  e.f(e.gg({"fu"}), "test_rd_rd", e.g(tmp_1), e.g(tmp_1));
+  e.f(e.gg({"fu"}), "branch", "z", e.shd(set_and_exit), e.shd(exit));
+  e.end();
+
+  e.start_segment(set_and_exit);
+  e.f(e.gg({"fu"}), "abs_r", e.g(tmp_2),
+      e.shd(ectx.get_value<std::string>("flag_name")));
+  e.f(e.gg({"fu"}), "mov_mb_vb", e.g(tmp_2), std::uint64_t(0));
+  e.f(e.gg({"fu"}), "jump", e.shd(exit));
+  e.end();
+
+  e.start_segment(exit);
+  e.f(e.gg({"fu"}), "pop_rd", e.g(tmp_1));
+  e.f(e.gg({"fu"}), "pop_rd", e.g(tmp_2));
+  e.fr(tmp_1);
+  e.fr(tmp_2);
+  e.bss(tmp_2, eg::i8086::eax, fctx);
+  e.f(e.gg({"fu"}), "clear_rd", e.g(tmp_2));
+  e.fr(tmp_2);
+  e.f(e.gg({"fu"}), "ret");
+  e.group_load("common", fctx);
+  e.end();
 }
 
 void pe32_i686::end_init_code() {
-  e.enable_alter("way_out", "out_key", "byte_ecb");
+  auto fctx = global::cs.generate_unique_number("fctx");
+
+  e.start_segment("exit_stub");
+  e.grab_group("common");
+  e.bs("tmp", "common", fctx);
+  e.f(e.gg({"fu"}), "push_rd", e.g("tmp"));
+  e.f(e.gg({"fu"}), "abs_r", e.g("tmp"), e.shd("thread_exit"));
+  e.f(e.gg({"fu"}), "mov_mb_vb", e.g("tmp"), std::uint64_t(1));
+  e.f(e.gg({"fu"}), "pop_rd", e.g("tmp"));
+  e.fr("tmp");
+  e.f(e.gg({"fu"}), "ret");
+  e.free_group("common");
+  e.end();
+
   e.start_segment("way_out");
   e.bf("accum", "common");
   e.bf("target", "common");
@@ -718,15 +861,14 @@ void pe32_i686::clear_exit_init_code() {
 void pe32_i686::error_exit_init_code() {
   e.start_segment("error_exit");
   e.f("push_vd", std::uint64_t(1));
+  e.f("push_vd", std::uint64_t(0xFFFFFFFF));
   e.bsp("ebp_", eg::i8086::ebp);
-  e.f("call_smd", e.g("ebp_"), "-", e.vshd("ExitProcess"));
+  e.f("call_smd", e.g("ebp_"), "-", e.vshd("NtTerminateProcess"));
   e.fr("ebp_");
   e.end();
 }
 
 void pe32_i686::search_expx_init_code() {
-  e.add_var("tmp_hash", 4);
-
   e.start_segment("search_expx");
   e.bf("dll_base", "common");
   e.f("load_rd", e.g("dll_base"), e.vshd("dll_base"));
@@ -1002,6 +1144,7 @@ void pe32_i686::build_import_stub() {
   e.end();
   std::vector<uint32_t> keys;
   std::uint32_t counter = 0;
+  bool lock = false;
   for (uint64_t i = 0; i < import->size(); i++) {
     auto lib = (*import)[i];
     e.bf("iat_base", "common");
@@ -1039,6 +1182,19 @@ void pe32_i686::build_import_stub() {
       e.bf("tmp", "common");
       e.start_segment("import_function_" + std::to_string(f_counter));
       f_counter++;
+      if (!lock && f_counter > 1 && global::rc.may_be(8)) {
+        e.f("push_rd", e.g("iat_base"));
+#ifdef CHECK_DEBUGGER
+        auto cid = add_container();
+        add_to_container(cid, "target",
+                         "import_function_" + std::to_string(f_counter - 2));
+        add_to_container(cid, "if_error", std::string("error_exit"));
+        insert_random_trap({}, cid, 0);
+        remove_container(cid);
+#endif
+        insert_encrypt("import_function_" + std::to_string(f_counter - 2));
+        e.f("pop_rd", e.g("iat_base"));
+      }
       e.f("abs_r", e.g("tmp"), e.shd(function_alias));
       e.f("store_rd", e.vshd("target"), e.g("tmp"));
       e.f("store_vd", e.vshd("count"), e.fszd(function_alias));
@@ -1072,8 +1228,24 @@ void pe32_i686::build_import_stub() {
           e.f("jump", e.shd("reloc"));
         else
           e.f("jump", e.shd("import_library_" + std::to_string(l_counter)));
-      } else
+      } else {
+        if (global::rc.may_be(7)) {
+          e.f("push_rd", e.g("iat_base"));
+          insert_decrypt("import_function_" + std::to_string(f_counter));
+#ifdef CHECK_DEBUGGER
+          auto cid = add_container();
+          add_to_container(cid, "target",
+                           "import_function_" + std::to_string(f_counter));
+          add_to_container(cid, "if_error", std::string("error_exit"));
+          insert_random_trap({}, cid, 0);
+          remove_container(cid);
+#endif
+          e.f("pop_rd", e.g("iat_base"));
+          lock = true;
+        } else
+          lock = false;
         e.f("jump", e.shd("import_function_" + std::to_string(f_counter)));
+      }
       e.end();
     }
     e.fr("iat_base");
@@ -1121,17 +1293,46 @@ void pe32_i686::build_reloc_stub() {
     e.f("jump", e.shd("tune_reloc_" + std::to_string(r_count)));
   e.end();
   e.fr("ebp_");
+  bool lock = false;
   for (uint64_t i = 0; i < relocs->size(); i++) {
     auto r = (*relocs)[i];
     e.start_segment("tune_reloc_" + std::to_string(r_count));
     r_count++;
+    if (!lock && r_count > 1 && global::rc.may_be(6)) {
+      e.f("push_rd", e.g("D"));
+#ifdef CHECK_DEBUGGER
+      auto cid = add_container();
+      add_to_container(cid, "target",
+                       "tune_reloc_" + std::to_string(r_count - 2));
+      add_to_container(cid, "if_error", std::string("error_exit"));
+      insert_random_trap({}, cid, 0);
+      remove_container(cid);
+#endif
+      insert_encrypt("tune_reloc_" + std::to_string(r_count - 2));
+      e.f("pop_rd", e.g("D"));
+    }
     e.bf("tmp", "common");
     e.f("abs_r", e.g("tmp"), std::uint64_t(r));
     e.f("add_md_rd", e.g("tmp"), e.g("D"));
     e.fr("tmp");
-    if (i != (relocs->size() - 1))
+    if (i != (relocs->size() - 1)) {
+      if (global::rc.may_be(5)) {
+        e.f("push_rd", e.g("D"));
+        insert_decrypt("tune_reloc_" + std::to_string(r_count));
+#ifdef CHECK_DEBUGGER
+        auto cid = add_container();
+        add_to_container(cid, "target",
+                         "tune_reloc_" + std::to_string(r_count));
+        add_to_container(cid, "if_error", std::string("error_exit"));
+        insert_random_trap({}, cid, 0);
+        remove_container(cid);
+#endif
+        e.f("pop_rd", e.g("D"));
+        lock = true;
+      } else
+        lock = false;
       e.f("jump", e.shd("tune_reloc_" + std::to_string(r_count)));
-    else
+    } else
       e.f("jump", e.shd("tls_stub"));
     e.end();
   }
@@ -1189,10 +1390,6 @@ void pe32_i686::build_tls_stub() {
   e.add_address("first_line_addr", "first_line",
                 get_ld()->get_optional_header()->image_base);
   e.add_data("tls_callbacks_end", 4);
-  e.end();
-
-  e.start_segment("first_line");
-  e.f(e.gg({"fu"}), "ret_vw", std::uint64_t(0xC));
   e.end();
 
   e.start_segment("tls_stub");
@@ -1256,17 +1453,15 @@ void pe32_i686::build_reloc_table() {
       std::map<std::uint32_t, std::vector<std::uint32_t>> used;
       std::vector<std::uint32_t> need;
       std::uint64_t shift = 0;
-      root->get_depended_memory(
-          "tls_directory",
-          [&shift](eg::memory_piece *mp) { shift = mp->get_shift(); },
-          {eg::dependence_flags::shift});
+      std::function<void(eg::memory_piece * mp)> fn =
+          [&shift](eg::memory_piece *mp) { shift = mp->get_shift(); };
+      root->get_depended_memory("tls_directory", fn,
+                                {eg::dependence_flags::shift});
       for (std::uint32_t i = 0; i <= 12; i += 4)
         need.push_back(static_cast<std::uint32_t>(shift) + i);
 
-      root->get_depended_memory(
-          "first_line_addr",
-          [&shift](eg::memory_piece *mp) { shift = mp->get_shift(); },
-          {eg::dependence_flags::shift});
+      root->get_depended_memory("first_line_addr", fn,
+                                {eg::dependence_flags::shift});
 
       need.push_back(static_cast<std::uint32_t>(shift));
 
@@ -1307,7 +1502,7 @@ void pe32_i686::build_reloc_table() {
       reloc_table.insert(reloc_table.end(), tmpv.begin(), tmpv.end());
       dl->set_flag(eg::type_flags::node_cached);
     } else
-      reloc_table.resize(5 * 8);
+      reloc_table.resize(6 * 8);
     dl->set_content(&reloc_table);
   });
 
@@ -1404,10 +1599,10 @@ void pe32_i686::build_resources() {
             for (auto of : offsets) {
               if (of.second == 0xFFFFFFFFFFFFFFFF) break;
               std::uint64_t shift = 0;
-              root->get_depended_memory(
-                  "resource_" + std::to_string(of.second),
-                  [&shift](eg::memory_piece *mp) { shift = mp->get_shift(); },
-                  {eg::dependence_flags::shift});
+              std::function<void(eg::memory_piece * mp)> fn =
+                  [&shift](eg::memory_piece *mp) { shift = mp->get_shift(); };
+              root->get_depended_memory("resource_" + std::to_string(of.second),
+                                        fn, {eg::dependence_flags::shift});
               global::value_to_vector(&tmp, static_cast<uint32_t>(shift),
                                       sizeof(uint32_t));
               entries.insert(entries.end(), tmp.begin(), tmp.end());
@@ -1461,10 +1656,10 @@ void pe32_i686::build_export() {
         global::value_to_vector(&tmp, ed->minor_version, sizeof(uint16_t));
         table.insert(table.end(), tmp.begin(), tmp.end());
         std::uint64_t shift = 0;
-        root->get_depended_memory(
-            "export_image_name",
-            [&shift](eg::memory_piece *mp) { shift = mp->get_shift(); },
-            {eg::dependence_flags::shift});
+        std::function<void(eg::memory_piece * mp)> fn =
+            [&shift](eg::memory_piece *mp) { shift = mp->get_shift(); };
+        root->get_depended_memory("export_image_name", fn,
+                                  {eg::dependence_flags::shift});
         global::value_to_vector(&tmp, static_cast<uint32_t>(shift),
                                 sizeof(uint32_t));
         table.insert(table.end(), tmp.begin(), tmp.end());
@@ -1475,24 +1670,18 @@ void pe32_i686::build_export() {
         table.insert(table.end(), tmp.begin(), tmp.end());
         global::value_to_vector(&tmp, ed->number_of_names, sizeof(uint32_t));
         table.insert(table.end(), tmp.begin(), tmp.end());
-        root->get_depended_memory(
-            "export_funcs",
-            [&shift](eg::memory_piece *mp) { shift = mp->get_shift(); },
-            {eg::dependence_flags::shift});
+        root->get_depended_memory("export_funcs", fn,
+                                  {eg::dependence_flags::shift});
         global::value_to_vector(&tmp, static_cast<uint32_t>(shift),
                                 sizeof(uint32_t));
         table.insert(table.end(), tmp.begin(), tmp.end());
-        root->get_depended_memory(
-            "export_names",
-            [&shift](eg::memory_piece *mp) { shift = mp->get_shift(); },
-            {eg::dependence_flags::shift});
+        root->get_depended_memory("export_names", fn,
+                                  {eg::dependence_flags::shift});
         global::value_to_vector(&tmp, static_cast<uint32_t>(shift),
                                 sizeof(uint32_t));
         table.insert(table.end(), tmp.begin(), tmp.end());
-        root->get_depended_memory(
-            "export_ords",
-            [&shift](eg::memory_piece *mp) { shift = mp->get_shift(); },
-            {eg::dependence_flags::shift});
+        root->get_depended_memory("export_ords", fn,
+                                  {eg::dependence_flags::shift});
         global::value_to_vector(&tmp, static_cast<uint32_t>(shift),
                                 sizeof(uint32_t));
         table.insert(table.end(), tmp.begin(), tmp.end());
@@ -1523,10 +1712,10 @@ void pe32_i686::build_export() {
       if (root->get_state() >= eg::build_states::translating) {
         std::vector<std::uint8_t> tmp;
         std::uint64_t shift = 0;
-        root->get_depended_memory(
-            "export_directory",
-            [&shift](eg::memory_piece *mp) { shift = mp->get_shift(); },
-            {eg::dependence_flags::shift});
+        std::function<void(eg::memory_piece * mp)> fn =
+            [&shift](eg::memory_piece *mp) { shift = mp->get_shift(); };
+        root->get_depended_memory("export_directory", fn,
+                                  {eg::dependence_flags::shift});
         for (uint64_t i = 0; i < exp->addresses.size(); i++) {
           std::pair<std::vector<uint8_t>, bool> &current = exp->addresses[i];
           if (current.second) {
@@ -1559,10 +1748,10 @@ void pe32_i686::build_export() {
             std::vector<std::uint8_t> tmp;
             for (std::uint32_t i = 0; i < exp->names.size(); i++) {
               std::uint64_t shift = 0;
-              root->get_depended_memory(
-                  "export_name_" + std::to_string(i),
-                  [&shift](eg::memory_piece *mp) { shift = mp->get_shift(); },
-                  {eg::dependence_flags::shift});
+              std::function<void(eg::memory_piece * mp)> fn =
+                  [&shift](eg::memory_piece *mp) { shift = mp->get_shift(); };
+              root->get_depended_memory("export_name_" + std::to_string(i), fn,
+                                        {eg::dependence_flags::shift});
               global::value_to_vector(&tmp, static_cast<uint32_t>(shift),
                                       sizeof(uint32_t));
               table.insert(table.end(), tmp.begin(), tmp.end());
@@ -1575,12 +1764,26 @@ void pe32_i686::build_export() {
   }
 }
 
+void pe32_i686::insert_encrypt(std::string memory_name) {
+  e.f("store_abs", e.vshd("target"), e.shd(memory_name));
+  e.f("store_vd", e.vshd("count"), e.fszd(memory_name));
+  e.f("store_vb", e.vshd("byte_key"),
+      std::uint64_t(global::rc.generate_random_number() % 256));
+  e.f("invoke", e.shd("alter_b"));
+}
+
+void pe32_i686::insert_decrypt(std::string memory_name) {
+  e.enable_alter(memory_name, memory_name + "_key", "byte_ecb");
+  e.f("store_abs", e.vshd("target"), e.shd(memory_name));
+  e.f("store_vd", e.vshd("count"), e.fszd(memory_name));
+  e.f("store_vb", e.vshd("byte_key"), e.kd(memory_name + "_key", 8, 0));
+  e.f("invoke", e.shd("alter_b"));
+}
+
 void pe32_i686::build_mprotect_stub() {
   e.start_segment("mprotect");
-  e.f("store_abs", e.vshd("target"), e.shd("way_out"));
-  e.f("store_vd", e.vshd("count"), e.fszd("way_out"));
-  e.f("store_vb", e.vshd("byte_key"), e.kd("out_key", 8, 0));
-  e.f("invoke", e.shd("alter_b"));
+
+  insert_decrypt("way_out");
 
   e.bsp("eax_", eg::i8086::eax);
   e.bsp("ebp_", eg::i8086::ebp);
@@ -1591,9 +1794,23 @@ void pe32_i686::build_mprotect_stub() {
   e.end();
 
   if (get_ld()->is_nx_compatible()) {
+    bool lock = false;
     for (std::uint64_t i = 0; i < get_ld()->get_sections_count(); i++) {
       e.start_segment("s_right_set_" + std::to_string(s_counter));
       s_counter++;
+      if (!lock && s_counter > 1 && global::rc.may_be(16)) {
+        e.f("push_rd", e.g("trash"));
+#ifdef CHECK_DEBUGGER
+        auto cid = add_container();
+        add_to_container(cid, "target",
+                         "s_right_set_" + std::to_string(s_counter - 2));
+        add_to_container(cid, "if_error", std::string("error_exit"));
+        insert_random_trap({}, cid, 0);
+        remove_container(cid);
+#endif
+        insert_encrypt("s_right_set_" + std::to_string(s_counter - 2));
+        e.f("pop_rd", e.g("trash"));
+      }
       e.bf("beg", "common");
       e.push_registers({e.g("trash")});
       e.f("push_rd", e.g("trash"));
@@ -1606,22 +1823,37 @@ void pe32_i686::build_mprotect_stub() {
       e.f("call_smd", e.g("ebp_"), "-", e.vshd("VirtualProtect"));
       e.pop_registers({e.g("trash")});
       e.fr("beg");
+      if (global::rc.may_be(15)) {
+        e.f("push_rd", e.g("trash"));
+        insert_decrypt("s_right_set_" + std::to_string(s_counter));
+#ifdef CHECK_DEBUGGER
+        auto cid = add_container();
+        add_to_container(cid, "target",
+                         "s_right_set_" + std::to_string(s_counter));
+        add_to_container(cid, "if_error", std::string("error_exit"));
+        insert_random_trap({}, cid, 0);
+        remove_container(cid);
+#endif
+        e.f("pop_rd", e.g("trash"));
+        lock = true;
+      } else
+        lock = false;
       e.f("jump", e.shd("s_right_set_" + std::to_string(s_counter)));
       e.end();
     }
   }
   e.start_segment("s_right_set_" + std::to_string(s_counter));
   s_counter++;
-  e.bf("beg", "common");
-  e.f("abs_r", e.g("beg"), get_ld()->get_begin_of_stub());
-  e.push_registers({e.g("trash")});
-  e.f("push_rd", e.g("trash"));
-  e.f("push_vd", std::uint64_t(0x20));
-  e.f("push_vd", e.ssd());
-  e.f("push_rd", e.g("beg"));
-  e.f("call_smd", e.g("ebp_"), "-", e.vshd("VirtualProtect"));
-  e.pop_registers({e.g("trash")});
-  e.fr("beg");
+  // e.bf("beg", "common");
+  // e.f("abs_r", e.g("beg"), get_ld()->get_begin_of_stub());
+  // e.push_registers({e.g("trash")});
+  // e.f("push_rd", e.g("trash"));
+  // e.f("push_vd", std::uint64_t(0x20));
+  // e.f("push_vd", e.ssd());
+  // e.f("push_rd", e.g("beg"));
+  // e.f("call_smd", e.g("ebp_"), "-", e.vshd("VirtualProtect"));
+  // e.pop_registers({e.g("trash")});
+  // e.fr("beg");
   e.fr("trash");
   e.fr("ebp_");
   e.fr("eax_");
@@ -1634,20 +1866,20 @@ void pe32_i686::build_context_forks() {
     e.add_data("context_storage_" + std::to_string(i), 32);
 
   e.start_segment("fork_ctx");
-  e.grab_group("common");
+  e.grab_group("unsafe");
   e.f(e.gg({"fu"}), "pushad");
-  e.free_group("common");
+  e.free_group("unsafe");
 
-  e.bf("src", "common");
+  e.bf("src", "unsafe");
   e.bsp("esp_", eg::i8086::esp);
   e.f(e.gg({"fu", "ss"}), "mov_rd_rd", e.g("src"), e.g("esp_"));
   e.fr("esp_");
   e.f(e.gg({"fu"}), "jump", e.shd("store_ctx_0"));
   e.end();
 
-  e.bf("accum", "common");
-  e.bf("dst", "common");
-  e.bf("fork_target", "common");
+  e.bf("accum", "unsafe");
+  e.bf("dst", "unsafe");
+  e.bf("fork_target", "unsafe");
 
   e.start_segment("fork_mv_ctx");
   for (uint32_t i = 0; i < 8; i++) {
@@ -1663,6 +1895,23 @@ void pe32_i686::build_context_forks() {
 
   for (std::uint32_t i = 0; i < 256; i++) {
     e.start_segment("store_ctx_" + std::to_string(i));
+#ifdef CHECK_DEBUGGER
+    if (i != 0 && global::rc.may_be(5)) {
+      e.f(e.gg({"fu"}), "push_rd", e.g("src"));
+      e.f(e.gg({"fu"}), "push_rd", e.g("dst"));
+      e.f(e.gg({"fu"}), "push_rd", e.g("fork_target"));
+      e.f(e.gg({"fu"}), "push_rd", e.g("accum"));
+      auto cid = add_container();
+      add_to_container(cid, "target", "store_ctx_" + std::to_string(i - 1));
+      add_to_container(cid, "if_error", std::string("fast_exit"));
+      insert_random_trap({"undep", "unapi"}, cid, e.gg({"fu"}));
+      remove_container(cid);
+      e.f(e.gg({"fu"}), "pop_rd", e.g("accum"));
+      e.f(e.gg({"fu"}), "pop_rd", e.g("fork_target"));
+      e.f(e.gg({"fu"}), "pop_rd", e.g("dst"));
+      e.f(e.gg({"fu"}), "pop_rd", e.g("src"));
+    }
+#endif
     e.f(e.gg({"fu"}), "add_rd_vd", e.g("src"), uint64_t(28));
     e.f(e.gg({"fu"}), "abs_r", e.g("dst"),
         e.shd("context_storage_" + std::to_string(i)));
@@ -1680,65 +1929,83 @@ void pe32_i686::build_context_forks() {
   e.start_segment("store_ctx_256");
   e.bsp("esp_", eg::i8086::esp);
   e.f(e.gg({"fu"}), "add_rd_vd", e.g("esp_"), std::uint64_t(32));
-  e.f(e.gg({"fu"}), "jump", e.shd("clear_end"));
+  // e.f(e.gg({"fu"}), "jump", e.shd("clear_end"));
+  e.f(e.gg({"fu"}), "jump", e.shd("set_base"));
   e.fr("esp_");
+  e.end();
+
+  e.start_segment("fast_exit");
+  e.bf("tmp", "unsafe");
+  for (uint8_t i = 0; i < 4; i++) e.f(e.gg({"fu"}), "pop_rd", e.g("tmp"));
+  e.fr("tmp");
+  e.bf("tmp", "unsafe");
+  e.f(e.gg({"fu"}), "abs_r", e.g("tmp"), e.shd("thread_exit"));
+  e.f(e.gg({"fu"}), "mov_mb_vb", e.g("tmp"), std::uint64_t(1));
+  e.fr("tmp");
+  e.grab_group("unsafe");
+  e.f(e.gg({"fu"}), "popad");
+  e.f(e.gg({"fu"}), "ret");
+  e.free_group("unsafe");
   e.end();
 }
 
-std::uint32_t pe32_i686::build_code(std::vector<std::uint8_t> *stub,
-                                    std::vector<std::uint8_t> *data) {
-  e.set_base(get_ld()->get_begin_of_stub());
+void pe32_i686::load_apis(std::map<std::string, std::uint32_t> &requirements,
+                          std::string next_name, bool enable) {
+  bool first = true;
 
-  e.init_state();
+  std::string last_s;
 
-  e.add_data("image", data);
+  for (auto r : requirements) {
+    bool lock = false;
+    auto seg = global::cs.generate_unique_string("usegment");
+    e.f("store_rd", e.vshd("hash"), std::uint64_t(r.second));
+    e.f("invoke", e.shd("get_apix"));
+    e.bf("tmp", "common");
+    e.f("load_rd", e.g("tmp"), e.vshd("func"));
+    e.f("store_rd", e.vshd(r.first), e.g("tmp"));
+    e.fr("tmp");
 
-  e.start_frame("general");
-  e.copy_fundamental();
+    if (global::rc.may_be(15)) {
+      if (enable) {
+        insert_decrypt(seg);
+#ifdef CHECK_DEBUGGER
+        auto cid = add_container();
+        add_to_container(cid, "target", seg);
+        add_to_container(cid, "if_error", std::string("clear_exit"));
+        insert_random_trap({"unapi"}, cid, 0);
+        remove_container(cid);
+#endif
+      }
+      lock = true;
+    }
 
-  e.add_var("hash", 4);
-  e.add_var("dll_base", 4);
-  e.add_var("current_dll", 4);
-  e.add_var("func", 4);
-  e.add_var("trash_ptr", 4);
-  e.add_var("os_switch", 1);
-  e.add_var("align", 2);
-  e.add_var("LoadLibrary", 4);
-  e.add_var("GetModuleHandle", 4);
-  e.add_var("GetProcAddr", 4);
-  e.add_var("ExitProcess", 4);
-  e.add_var("VirtualProtect", 4);
-  e.add_var("GetVersionEx", 4);
-  e.add_var("NtQueryInformationProcess", 4);
-  e.add_var("GetThreadContext", 4);
-  e.add_var("SetThreadContext", 4);
+    e.f("jump", e.shd(seg));
+    e.end();
 
-  search_expx_init_code();
-  get_apix_init_code();
-  error_exit_init_code();
-  clear_exit_init_code();
-  end_init_code();
-  find_library_init_code();
-  load_function_init_code();
-  vista_or_higher_init_code();
-  build_mprotect_stub();
-  build_import_stub();
-  build_tls_stub();
-  build_reloc_stub();
-  build_reloc_table();
-  build_resources();
-  build_export();
+    e.start_segment(seg);
 
-  build_context_forks();
+    if (!first && !lock && global::rc.may_be(16)) {
+      if (enable) {
+#ifdef CHECK_DEBUGGER
+        auto cid = add_container();
+        add_to_container(cid, "target", last_s);
+        add_to_container(cid, "if_error", std::string("clear_exit"));
+        insert_random_trap({"unapi"}, cid, 0);
+        remove_container(cid);
+#endif
+        insert_encrypt(last_s);
+      }
+    }
 
-  e.start_segment("begin");
-  e.grab_group("common");
-  e.f(e.gg({"fu"}), "invoke", e.shd("fork_ctx"));
-  e.f(e.gg({"fu"}), "jump", e.shd("set_base"));
-  e.free_group("common");
+    last_s = seg;
+
+    if (first) first = false;
+  }
+  e.f("jump", e.shd(next_name));
   e.end();
+}
 
-  e.start_segment("set_base");
+void pe32_i686::set_base() {
   e.bsp("esp_", eg::i8086::esp);
   e.bsp("ebp_", eg::i8086::ebp);
   e.f(e.gg({"fu"}), "mov_rd_rd", e.g("ebp_"), e.g("esp_"));
@@ -1766,19 +2033,192 @@ std::uint32_t pe32_i686::build_code(std::vector<std::uint8_t> *stub,
   }
   e.f(e.gg({"fu"}), "store_rd", e.vshd("base"), e.g("shift"));
   e.fr("shift");
+}
+
+void pe32_i686::detach_debugger(std::string reg_name) {
+  e.bsp("ebp_", eg::i8086::ebp);
+  e.f("push_vd", std::uint64_t(0));
+  e.f("push_vd", std::uint64_t(0));
+  e.f("push_vd", std::uint64_t(0x11));
+  e.f("push_rd", e.g(reg_name));
+  e.f("call_smd", e.g("ebp_"), "-", e.vshd("NtSetInformationThread"));
+  e.fr("ebp_");
+}
+
+void pe32_i686::init_guard_routine() {
+  e.start_segment("guard_routine");
+  e.grab_group("common");
+  e.f(e.gg({"fu"}), "pushad");
+  e.free_group("common");
+  set_base();
+  std::map<std::string, uint32_t> g_apis;
+  g_apis["NtTerminateProcess"] = get_NtTerminateProcess_hash();
+  g_apis["NtSetInformationThread"] = get_NtSetInformationThread_hash();
+  g_apis["GetVersionEx"] = get_GetVersionEx_hash();
+  g_apis["NtQueryInformationProcess"] = get_NtQueryInformationProcess_hash();
+  g_apis["GetThreadContext"] = get_GetThreadContext_hash();
+  g_apis["SetThreadContext"] = get_SetThreadContext_hash();
+  g_apis["Sleep"] = get_Sleep_hash();
+  load_apis(g_apis, "hide_guard", false);
+
+  e.start_segment("hide_guard");
+  e.f("invoke", e.shd("vista_or_higher"));
+  api_flag = true;
+#ifdef CHECK_DEBUGGER
+  e.bf("tmp", "common");
+  e.f("mov_rd_vd", e.g("tmp"), std::uint64_t(0xFFFFFFFE));
+  detach_debugger("tmp");
+  e.fr("tmp");
+#endif
+  e.f("jump", e.shd("guard_stub_1"));
+  e.end();
+
+  e.start_segment("guard_stub_1");
+#ifdef CHECK_DEBUGGER
+  auto cid = add_container();
+  add_to_container(cid, "if_error", std::string("error_exit"));
+  insert_trap("is_debbuger_present", cid, 0);
+  insert_trap("nt_global_flag", cid, 0);
+  insert_trap("heap_flags", cid, 0);
+  insert_trap("remote_debugger_present", cid, 0);
+  insert_trap("process_debug_flags", cid, 0);
+  insert_trap("debug_object_handle", cid, 0);
+  insert_trap("reset_thread_ctx", cid, 0);
+  remove_container(cid);
+#endif
+  e.f("jump", e.shd("guard_stub_2"));
+  e.end();
+
+  e.start_segment("guard_stub_2");
+  e.bsp("ebp_", eg::i8086::ebp);
+  e.f("push_vd", std::uint64_t(200));
+  e.f("call_smd", e.g("ebp_"), "-", e.vshd("Sleep"));
+  e.fr("ebp_");
+  e.bf("tmp", "common");
+  e.f("abs_r", e.g("tmp"), e.shd("thread_exit"));
+  e.f("cmp_mb_vb", e.g("tmp"), std::uint64_t(1));
+  e.fr("tmp");
+  e.f("branch", "e", e.shd("guard_end"), e.shd("guard_stub_1"));
+  e.end();
+
+  e.start_segment("guard_end");
+  e.bsp("esp_", eg::i8086::esp);
+  e.f(e.gg({"fu"}), "add_rd_vd", e.g("esp_"), e.frszd());
+  e.fr("esp_");
+  e.grab_group("common");
+  e.f(e.gg({"fu"}), "popad");
+  e.f(e.gg({"fu"}), "ret_vw", std::uint64_t(0x4));
+  e.free_group("common");
+  e.end();
+}
+
+std::uint32_t pe32_i686::build_code(std::vector<std::uint8_t> *stub,
+                                    std::vector<std::uint8_t> *data) {
+  e.set_base(get_ld()->get_begin_of_stub());
+
+  e.init_state();
+
+  e.add_data("image", data);
+
+  e.add_data("thread_ready", 1);
+  e.add_data("thread_exit", 1);
+
+  e.start_frame("general");
+  e.copy_fundamental();
+
+  e.add_var("hash", 4);
+  e.add_var("tmp_hash", 4);
+  e.add_var("dll_base", 4);
+  e.add_var("current_dll", 4);
+  e.add_var("func", 4);
+  e.add_var("trash_ptr", 4);
+  e.add_var("os_switch", 1);
+  e.add_var("align", 2);
+  e.add_var("LoadLibrary", 4);
+  e.add_var("GetModuleHandle", 4);
+  e.add_var("GetProcAddr", 4);
+  e.add_var("NtTerminateProcess", 4);
+  e.add_var("VirtualProtect", 4);
+  e.add_var("GetVersionEx", 4);
+  e.add_var("NtQueryInformationProcess", 4);
+  e.add_var("NtSetInformationThread", 4);
+  e.add_var("GetThreadContext", 4);
+  e.add_var("SetThreadContext", 4);
+
+  search_expx_init_code();
+  get_apix_init_code();
+  error_exit_init_code();
+  clear_exit_init_code();
+  end_init_code();
+  find_library_init_code();
+  load_function_init_code();
+  vista_or_higher_init_code();
+  build_mprotect_stub();
+  build_import_stub();
+  build_tls_stub();
+  build_reloc_stub();
+  build_reloc_table();
+  build_resources();
+  build_export();
+
+  build_context_forks();
+
+  e.start_segment("begin");
+  e.grab_group("common");
+  e.f(e.gg({"fu"}), "jump", e.shd("fork_ctx"));
+  // e.f(e.gg({"fu"}), "invoke", e.shd("fork_ctx"));
+  // e.f(e.gg({"fu"}), "jump", e.shd("set_base"));
+  e.free_group("common");
+  e.end();
+
+  e.start_segment("set_base");
+  e.bf("tmp", "unsafe");
+  e.f(e.gg({"fu"}), "abs_r", e.g("tmp"), e.shd("exit_stub"));
+  e.f(e.gg({"fu"}), "push_rd", e.g("tmp"));
+  e.fr("tmp");
+  set_base();
+#ifdef CHECK_DEBUGGER
+  auto cid = add_container();
+  add_to_container(cid, "target", std::string("first_line"));
+  add_to_container(cid, "if_error", std::string("clear_exit"));
+  insert_trap("integrity_check", cid, 0);
+  remove_container(cid);
+#endif
+  e.f("jump", e.shd("load_general_api"));
+  e.end();
+
+  e.start_segment("load_general_api");
+  std::map<std::string, uint32_t> g_apis;
+  g_apis["LoadLibrary"] = get_LoadLibrary_hash();
+  g_apis["GetProcAddr"] = get_GetProcAddress_hash();
+  g_apis["GetModuleHandle"] = get_GetModuleHandle_hash();
+  g_apis["NtTerminateProcess"] = get_NtTerminateProcess_hash();
+  g_apis["VirtualProtect"] = get_VirtualProtect_hash();
+  g_apis["NtQueryInformationProcess"] = get_NtQueryInformationProcess_hash();
+  g_apis["GetVersionEx"] = get_GetVersionEx_hash();
+  g_apis["GetThreadContext"] = get_GetThreadContext_hash();
+  g_apis["SetThreadContext"] = get_SetThreadContext_hash();
+  load_apis(g_apis, "load_general_api_end", true);
+
+  e.start_segment("load_general_api_end");
+  e.f("invoke", e.shd("vista_or_higher"));
+  api_flag = true;
+#ifdef CHECK_DEBUGGER
+  cid = add_container();
+  add_to_container(cid, "target", std::string("first_line_checks"));
+  add_to_container(cid, "if_error", std::string("clear_exit"));
+  insert_trap("integrity_check", cid, 0);
+  remove_container(cid);
+#endif
   e.f("jump", e.shd("decrypt_secondary_key"));
   e.end();
 
   e.enable_alter("image", "some_key", "aes");
   e.add_key("some_key");
-  e.enable_alter("decrypt_paramount_key", "third_rate_key", "byte_ecb");
   e.enable_alter("some_key", "secondary_key", "dword_ecb");
 
   e.start_segment("decrypt_secondary_key");
-  e.f("store_abs", e.vshd("target"), e.shd("decrypt_paramount_key"));
-  e.f("store_vd", e.vshd("count"), e.fszd("decrypt_paramount_key"));
-  e.f("store_vb", e.vshd("byte_key"), e.kd("third_rate_key", 8, 0));
-  e.f("invoke", e.shd("alter_b"));
+  insert_decrypt("decrypt_paramount_key");
   e.f("jump", e.shd("decrypt_paramount_key"));
   e.end();
 
@@ -1798,84 +2238,110 @@ std::uint32_t pe32_i686::build_code(std::vector<std::uint8_t> *stub,
   e.f("store_abs", e.vshd("target"), e.shd("image"));
   e.f("store_abs", e.vshd("value"), get_ld()->get_real_image_begin());
   e.f("invoke", e.shd("uncompress"));
-  e.f("jump", e.shd("load_api"));
-  e.end();
-
-  e.start_segment("load_api");
-  e.f("store_rd", e.vshd("hash"), std::uint64_t(get_LoadLibrary_hash()));
-  e.f("invoke", e.shd("get_apix"));
-  e.bf("tmp", "common");
-  e.f("load_rd", e.g("tmp"), e.vshd("func"));
-  e.f("store_rd", e.vshd("LoadLibrary"), e.g("tmp"));
-  e.fr("tmp");
-
-  e.f("store_rd", e.vshd("hash"), std::uint64_t(get_GetProcAddress_hash()));
-  e.f("invoke", e.shd("get_apix"));
-  e.bf("tmp", "common");
-  e.f("load_rd", e.g("tmp"), e.vshd("func"));
-  e.f("store_rd", e.vshd("GetProcAddr"), e.g("tmp"));
-  e.fr("tmp");
-
-  e.f("store_rd", e.vshd("hash"), std::uint64_t(get_GetModuleHandle_hash()));
-  e.f("invoke", e.shd("get_apix"));
-  e.bf("tmp", "common");
-  e.f("load_rd", e.g("tmp"), e.vshd("func"));
-  e.f("store_rd", e.vshd("GetModuleHandle"), e.g("tmp"));
-  e.fr("tmp");
-
-  e.f("store_rd", e.vshd("hash"), std::uint64_t(get_ExitProcess_hash()));
-  e.f("invoke", e.shd("get_apix"));
-  e.bf("tmp", "common");
-  e.f("load_rd", e.g("tmp"), e.vshd("func"));
-  e.f("store_rd", e.vshd("ExitProcess"), e.g("tmp"));
-  e.fr("tmp");
-
-  e.f("store_rd", e.vshd("hash"), std::uint64_t(get_VirtualProtect_hash()));
-  e.f("invoke", e.shd("get_apix"));
-  e.bf("tmp", "common");
-  e.f("load_rd", e.g("tmp"), e.vshd("func"));
-  e.f("store_rd", e.vshd("VirtualProtect"), e.g("tmp"));
-  e.fr("tmp");
-
-  e.f("store_rd", e.vshd("hash"),
-      std::uint64_t(get_NtQueryInformationProcess_hash()));
-  e.f("invoke", e.shd("get_apix"));
-  e.bf("tmp", "common");
-  e.f("load_rd", e.g("tmp"), e.vshd("func"));
-  e.f("store_rd", e.vshd("NtQueryInformationProcess"), e.g("tmp"));
-  e.fr("tmp");
-
-  e.f("store_rd", e.vshd("hash"), std::uint64_t(get_GetVersionEx_hash()));
-  e.f("invoke", e.shd("get_apix"));
-  e.bf("tmp", "common");
-  e.f("load_rd", e.g("tmp"), e.vshd("func"));
-  e.f("store_rd", e.vshd("GetVersionEx"), e.g("tmp"));
-  e.fr("tmp");
-
-  e.f("store_rd", e.vshd("hash"), std::uint64_t(get_GetThreadContext_hash()));
-  e.f("invoke", e.shd("get_apix"));
-  e.bf("tmp", "common");
-  e.f("load_rd", e.g("tmp"), e.vshd("func"));
-  e.f("store_rd", e.vshd("GetThreadContext"), e.g("tmp"));
-  e.fr("tmp");
-
-  e.f("store_rd", e.vshd("hash"), std::uint64_t(get_SetThreadContext_hash()));
-  e.f("invoke", e.shd("get_apix"));
-  e.bf("tmp", "common");
-  e.f("load_rd", e.g("tmp"), e.vshd("func"));
-  e.f("store_rd", e.vshd("SetThreadContext"), e.g("tmp"));
-  e.fr("tmp");
-
-  e.f("invoke", e.shd("vista_or_higher"));
-
-  auto beg_trap = add_container();
-  add_to_container(beg_trap, "target", std::string("begin"));
-  add_to_container(beg_trap, "if_error", std::string("clear_exit"));
-  insert_trap("reset_thread_ctx", beg_trap, {});
-  remove_container(beg_trap);
-
   e.f("jump", e.shd("import"));
   e.end();
+
+  e.end();
+
+  api_flag = false;
+
+  e.start_frame("support");
+
+  e.copy_fundamental();
+  e.copy_var("hash", "general");
+  e.copy_var("tmp_hash", "general");
+  e.copy_var("dll_base", "general");
+  e.copy_var("func", "general");
+  e.add_var("align", 3);
+  e.copy_var("NtTerminateProcess", "general");
+  e.copy_var("NtSetInformationThread", "general");
+  e.add_var("CreateThread", 4);
+
+  e.start_segment("first_line");
+  e.grab_group("common");
+  e.f(e.gg({"fu"}), "pushad");
+  e.free_group("common");
+  set_base();
+  e.bf("flag_addr", "common");
+  e.bf("flag", "base");
+  e.f("abs_r", e.g("flag_addr"), e.shd("thread_ready"));
+  e.f("mov_rb_mb", e.g("flag", "lb"), e.g("flag_addr"));
+  e.f("test_rb_rb", e.g("flag", "lb"), e.g("flag", "lb"));
+  e.f("branch", "nz", e.shd("first_line_end"), e.shd("first_line_apis"));
+  e.fr("flag");
+  e.end();
+
+  e.start_segment("first_line_apis");
+  e.f("mov_mb_vb", e.g("flag_addr"), std::uint64_t(1));
+  e.fr("flag_addr");
+  std::map<std::string, uint32_t> s_apis;
+  s_apis["NtTerminateProcess"] = get_NtTerminateProcess_hash();
+  s_apis["CreateThread"] = get_CreateThread_hash();
+  s_apis["NtSetInformationThread"] = get_NtSetInformationThread_hash();
+  load_apis(s_apis, "first_line_checks", false);
+
+  e.start_segment("first_line_checks");
+#ifdef CHECK_DEBUGGER
+  e.bf("tmp", "common");
+  e.f("mov_rd_vd", e.g("tmp"), std::uint64_t(0xFFFFFFFE));
+  detach_debugger("tmp");
+  e.fr("tmp");
+  cid = add_container();
+  add_to_container(cid, "target", std::string("begin"));
+  add_to_container(cid, "if_error", std::string("error_exit"));
+  insert_trap("integrity_check", cid, 0);
+  insert_trap("is_debbuger_present", cid, 0);
+  insert_trap("nt_global_flag", cid, 0);
+  remove_container(cid);
+#endif
+  e.f("jump", e.shd("create_thread"));
+  e.end();
+
+  e.start_segment("create_thread");
+  e.bf("tmp", "common");
+  e.f("abs_r", e.g("tmp"), e.shd("guard_routine"));
+  e.bsp("ebp_", eg::i8086::ebp);
+  e.f("push_vd", std::uint64_t(0));
+  e.f("push_vd", std::uint64_t(0));
+  e.f("push_vd", std::uint64_t(0));
+  e.f("push_rd", e.g("tmp"));
+  e.f("push_vd", std::uint64_t(0));
+  e.f("push_vd", std::uint64_t(0));
+  e.f("call_smd", e.g("ebp_"), "-", e.vshd("CreateThread"));
+  e.fr("ebp_");
+  e.fr("tmp");
+  e.f("jump", e.shd("first_line_end"));
+  e.end();
+
+  e.start_segment("first_line_end");
+  e.bsp("esp_", eg::i8086::esp);
+  e.f(e.gg({"fu"}), "add_rd_vd", e.g("esp_"), e.frszd());
+  e.fr("esp_");
+  e.grab_group("common");
+  e.f(e.gg({"fu"}), "popad");
+  e.f(e.gg({"fu"}), "ret_vw", std::uint64_t(0xC));
+  e.free_group("common");
+  e.end();
+
+  e.end();
+
+  e.start_frame("guard");
+  e.copy_fundamental();
+  e.copy_var("hash", "general");
+  e.copy_var("tmp_hash", "general");
+  e.copy_var("dll_base", "general");
+  e.copy_var("func", "general");
+  e.copy_var("os_switch", "general");
+  e.copy_var("align", "general");
+  e.copy_var("NtTerminateProcess", "general");
+  e.copy_var("NtSetInformationThread", "general");
+  e.copy_var("GetVersionEx", "general");
+  e.copy_var("NtQueryInformationProcess", "general");
+  e.copy_var("GetThreadContext", "general");
+  e.copy_var("SetThreadContext", "general");
+  e.add_var("Sleep", 4);
+
+  init_guard_routine();
 
   e.end();
 

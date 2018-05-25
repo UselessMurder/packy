@@ -120,30 +120,26 @@ bool invariant::try_execute(global::flag_container fl,
       vars[v.first]->set_flag(type_flags::will_balanced);
   }
 
-  node *current = get_current_node<node>(root->get_build_node());
-
-  if (!current->check_flag(type_flags::memory_group))
-    throw std::domain_error("Instruction can be located only in group");
-
-  group *g = reinterpret_cast<group *>(0);
+  global::named_defer unselect_defer;
 
   if (balancer) {
+    node *current = get_current_node<node>(root->get_build_node());
+
+    if (!current->check_flag(type_flags::memory_group))
+      throw std::domain_error("Instruction can be located only in group");
+
     activation_group *ag = new activation_group(current, this);
+    ag->select_node();
+    unselect_defer.set_defer([&ag]() { ag->unselect_node(); });
+    ag->set_flag(type_flags::align_code);
     ag->set_balancer(balancer);
     ag->set_variables(&vars);
     for (auto a : *args_template) vars[a.first]->set_parent(ag);
-    g = ag;
-  } else {
-    g = new group(current);
+  } else
     find_node_by_flag<form>(this, type_flags::build_form,
                             {bypass_flags::parents})
         ->validate_arguments(&vars);
-  }
 
-  g->set_flag(type_flags::align_code);
-
-  g->select_node();
-  DEFER(g->unselect_node(););
   if (programmer) {
     programmer(fl, &vars);
   } else {

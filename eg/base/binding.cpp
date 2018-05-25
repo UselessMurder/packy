@@ -53,6 +53,7 @@ node::node(const node &n) : global_object(n), global::flag_container(n) {
 
 node &node::operator=(node &n) {
   global_object::operator=(n);
+  global::flag_container::operator=(n);
   this->parent_node = reinterpret_cast<node *>(0);
   this->last_current = reinterpret_cast<node *>(0);
   this->name = n.name;
@@ -118,7 +119,7 @@ void node::free_node(node *child_node) {
 
 std::vector<node *> *node::get_childs() { return &childs; }
 
-bool node::run_functor(std::function<bool(node *, std::uint64_t)> functor,
+bool node::run_functor(std::function<bool(node *, std::uint64_t)> &functor,
                        global::flag_container flags, std::uint64_t ctx) {
   if (flags.check_flag(bypass_flags::self)) {
     if (functor(this, ctx)) return true;

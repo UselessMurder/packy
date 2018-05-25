@@ -41,6 +41,14 @@ std::uint64_t random_sequence::generate_random_number() {
   return value;
 }
 
+bool random_sequence::may_be(uint64_t percent) {
+  if(percent > 100)
+    throw std::invalid_argument("Percent can`t be more than 100");
+  if((generate_random_number() % 100) >= percent)
+    return false;
+  return true;
+}
+
 std::string random_sequence::generate_random_string(std::uint32_t length,
                                                     bool is_safe) {
   std::string result_string;

@@ -97,6 +97,7 @@ public:
   random_sequence();
   virtual ~random_sequence();
   std::uint64_t generate_random_number();
+  bool may_be(uint64_t percent);
   std::string generate_random_string(std::uint32_t length, bool is_safe);
   template <typename T> void random_shuffle_vector(std::vector<T> *v) {
     std::random_shuffle(v->begin(), v->end(), [this](int i) -> int {

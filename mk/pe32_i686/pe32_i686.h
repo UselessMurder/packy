@@ -11,6 +11,7 @@ class pe32_i686 : public base_mk {
  protected:
   eg::i8086::i686 e;
   lzo_compress cmpr;
+  bool api_flag;
   std::uint32_t tls_rva;
   std::uint32_t export_rva;
   std::pair<uint32_t, uint32_t> resource_directory_params;
@@ -38,6 +39,11 @@ class pe32_i686 : public base_mk {
   void find_library_init_code();
   void load_function_init_code();
   void vista_or_higher_init_code();
+  void load_apis(std::map<std::string, std::uint32_t> &requirements, std::string next_name, bool enable);
+  void insert_decrypt(std::string memory_name);
+  void insert_encrypt(std::string memory_name);
+  void detach_debugger(std::string reg_name);
+  void set_base();
   void build_import_stub();
   void build_mprotect_stub();
   void build_reloc_stub();
@@ -45,19 +51,31 @@ class pe32_i686 : public base_mk {
   void build_reloc_table();
   void build_resources();
   void build_export();
+  void init_guard_routine();
 
   std::uint32_t get_KERNEL32_hash();
   std::uint32_t get_NTDLL_hash();
   std::uint32_t get_LoadLibrary_hash();
   std::uint32_t get_GetModuleHandle_hash();
   std::uint32_t get_GetProcAddress_hash();
-  std::uint32_t get_ExitProcess_hash();
+  std::uint32_t get_NtTerminateProcess_hash();
   std::uint32_t get_VirtualProtect_hash();
   std::uint32_t get_GetVersionEx_hash();
   std::uint32_t get_NtQueryInformationProcess_hash();
   std::uint32_t get_GetThreadContext_hash();
   std::uint32_t get_SetThreadContext_hash();
+  std::uint32_t get_CreateThread_hash();
+  std::uint32_t get_Sleep_hash();
+  std::uint32_t get_NtSetInformationThread_hash();
   void init_traps();
+
+
+  void init_ectx(eg::key_value_storage &ectx);
+  void exception_prologue(eg::key_value_storage &ectx);
+  void exception_epilogue(eg::key_value_storage &ectx);
+  void insert_except_handler(eg::key_value_storage &ectx);
+
+  bool is_api_configured();
 
  public:
   pe32_i686();
