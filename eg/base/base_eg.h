@@ -186,6 +186,8 @@ class build_root : public node,
   std::map<std::string, std::pair<std::string, uint64_t>> fake_registers;
   std::map<uint64_t, std::set<std::string>> fake_contexts;
 
+  std::map<std::string, uint64_t> address_alignment;
+
   #ifdef USE_CACHE
   std::map<std::string, form *> form_cache;
   #endif
@@ -294,6 +296,8 @@ class build_root : public node,
   void build(std::vector<uint8_t> *stub);
 
   virtual void copy_fundamental() = 0;
+
+  void set_address_alignment(std::string memory_name, uint64_t value);
 
   std::uint64_t get_memory_rva(std::string memory_name);
   std::uint64_t get_memory_payload_size(std::string memory_name);

@@ -284,10 +284,12 @@ class base_pe : public base_ld {
   virtual void resize_with_file_align(std::vector<uint8_t> *data) = 0;
   virtual void resize_with_section_align(std::vector<uint8_t> *data) = 0;
   virtual std::vector<uint8_t> get_rebuilded_header(
-      std::uint32_t stub_size, std::uint32_t code_begin, std::uint32_t tls_rva,
+      std::uint32_t stub_size, std::uint32_t code_begin,
+      std::pair<std::uint32_t, std::uint32_t> tls_directory,
       std::pair<std::uint32_t, std::uint32_t> reloc_directory,
       std::pair<std::uint32_t, std::uint32_t> resource_directory,
-      std::uint32_t export_rva) = 0;
+      std::uint32_t export_rva,
+      std::pair<std::uint32_t, std::uint32_t> import_directory) = 0;
   virtual std::vector<uint8_t> get_protected_data() = 0;
   virtual std::vector<uint8_t> *get_image() = 0;
   virtual std::uint64_t get_real_image_begin() = 0;

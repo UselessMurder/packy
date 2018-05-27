@@ -465,10 +465,26 @@ void build_root::locating() {
 
   global::rc.random_shuffle_vector(&build_sequence);
   std::uint64_t current_shift = base;
-  for (auto mp : build_sequence) {
-    mp->set_shift(current_shift);
-    current_shift += mp->get_full_size();
+
+  std::vector<std::pair<uint64_t, memory_piece *>> stubs;
+
+  for (uint64_t i = 0; i < build_sequence.size(); i++) {
+    if(address_alignment.count(build_sequence[i]->get_name()) > 0) {
+      auto aa = address_alignment[build_sequence[i]->get_name()];
+      if(current_shift % aa != 0) {
+        align_stub *stub_mp = new align_stub(get_trash_node());
+        stub_mp->set_size(aa - current_shift % aa);
+        stub_mp->set_shift(current_shift);
+        current_shift += stub_mp->get_full_size();
+        stubs.push_back(std::make_pair(i + stubs.size(), stub_mp));
+      }
+    }
+    build_sequence[i]->set_shift(current_shift);
+    current_shift += build_sequence[i]->get_full_size();
   }
+
+  for(auto st : stubs)
+    build_sequence.insert(build_sequence.begin() + st.first, st.second);
 
   stub_size = current_shift - base;
 }
@@ -511,6 +527,7 @@ void build_root::translating(std::vector<uint8_t> *stub) {
 void build_root::get_depended_memory(
     std::string memory_name, std::function<void(memory_piece *mp)> &getter,
     global::flag_container flags) {
+
   memory_piece *target = find_node_by_name<memory_piece>(
       get_build_node(), memory_name, {bypass_flags::childs});
 
@@ -593,6 +610,10 @@ void build_root::duplicate_guard(std::string current_name) {
                         global::cs.generate_unique_number("ctx"));
   if (ok) throw std::domain_error("Name: " + current_name + " already exists!");
 #endif
+}
+
+void build_root::set_address_alignment(std::string memory_name, uint64_t value) {
+    address_alignment[memory_name] = value;
 }
 
 form *build_root::make_form(std::string form_name) {

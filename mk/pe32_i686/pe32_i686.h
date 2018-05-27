@@ -12,10 +12,12 @@ class pe32_i686 : public base_mk {
   eg::i8086::i686 e;
   lzo_compress cmpr;
   bool api_flag;
-  std::uint32_t tls_rva;
   std::uint32_t export_rva;
   std::pair<uint32_t, uint32_t> resource_directory_params;
   std::pair<uint32_t, uint32_t> reloc_directory_params;
+  std::pair<uint32_t, uint32_t> tls_directory_params;
+  std::pair<uint32_t, uint32_t> import_directory_params;
+  std::map<std::string, uint32_t> local_keys;
   ld::pe::pe32 *get_ld();
   void write_header(std::vector<std::uint8_t> header);
   void write_data(std::vector<std::uint8_t> *data);
@@ -35,6 +37,7 @@ class pe32_i686 : public base_mk {
   void get_apix_init_code();
   void error_exit_init_code();
   void clear_exit_init_code();
+  void base_exit_init_code();
   void end_init_code();
   void find_library_init_code();
   void load_function_init_code();
@@ -45,6 +48,7 @@ class pe32_i686 : public base_mk {
   void detach_debugger(std::string reg_name);
   void set_base();
   void build_import_stub();
+  void build_import_directory();
   void build_mprotect_stub();
   void build_reloc_stub();
   void build_tls_stub();
@@ -52,6 +56,7 @@ class pe32_i686 : public base_mk {
   void build_resources();
   void build_export();
   void init_guard_routine();
+  void init_forever_crash_loop();
 
   std::uint32_t get_KERNEL32_hash();
   std::uint32_t get_NTDLL_hash();

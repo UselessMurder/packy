@@ -28,6 +28,7 @@ void frame::get_voids(std::vector<var> *voids) {
       exists.begin(), exists.end(),
       [](const var *a, const var *b) -> bool { return a->shift < b->shift; });
   std::uint64_t shift_pointer = 0;
+
   for (auto v : exists) {
     if (v->shift - shift_pointer > v->size)
       voids->push_back(var{.size = (v->shift - shift_pointer) - v->size,
@@ -96,7 +97,6 @@ void frame::add_dependence(std::string var_name, std::string frame_name) {
 }
 
 void frame::fix_vars() {
-
   if (check_flag(type_flags::fixed))
     throw std::domain_error("Cant`t fix already fixed frame with id: " +
                             std::to_string(get_object_id()));
@@ -133,6 +133,7 @@ void frame::fix_vars() {
   } else {
     size = 0;
   }
+
   set_flag(type_flags::fixed);
 }
 

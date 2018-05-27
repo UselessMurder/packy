@@ -29,6 +29,15 @@ class memory_piece : public node, public printable_object {
     virtual std::string to_string() = 0;
 };
 
+class align_stub : public memory_piece {
+public:
+    align_stub(node *parent);
+    virtual ~align_stub();
+    void set_size(uint64_t new_size);
+    void get_content(std::vector<std::uint8_t> *content, global::flag_container flags);
+    std::string to_string();
+};
+
 class group : public memory_piece {
    protected:
     void resize(node *root);

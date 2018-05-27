@@ -130,10 +130,12 @@ bool pe32::is_valid_nt_magic() {
 }
 
 std::vector<uint8_t> pe32::get_rebuilded_header(
-    std::uint32_t stub_size, std::uint32_t code_begin, std::uint32_t tls_rva,
+    std::uint32_t stub_size, std::uint32_t code_begin,
+    std::pair<std::uint32_t, std::uint32_t> tls_directory,
     std::pair<std::uint32_t, std::uint32_t> reloc_directory,
     std::pair<std::uint32_t, std::uint32_t> resource_directory,
-    std::uint32_t export_rva) {
+    std::uint32_t export_rva,
+    std::pair<std::uint32_t, std::uint32_t> import_directory) {
   std::vector<uint8_t> new_header(
       image.begin(), image.begin() + get_optional_header()->size_of_headers);
 
@@ -152,12 +154,14 @@ std::vector<uint8_t> pe32::get_rebuilded_header(
       image.size() - get_section_header(0)->virtual_address;
   header->address_of_entry_point = code_begin;
 
+  header->data_directory[1].virtual_address = import_directory.first;
+  header->data_directory[1].size = import_directory.second;
   header->data_directory[2].virtual_address = resource_directory.first;
   header->data_directory[2].size = resource_directory.second;
   header->data_directory[5].virtual_address = reloc_directory.first;
   header->data_directory[5].size = reloc_directory.second;
-  header->data_directory[9].virtual_address = tls_rva;
-  header->data_directory[9].size = sizeof(image_tls_directory32);
+  header->data_directory[9].virtual_address = tls_directory.first;
+  header->data_directory[9].size = tls_directory.second;
   header->data_directory[0].virtual_address = export_rva;
   header->data_directory[0].size =
       get_optional_header()->data_directory[0].size;
@@ -193,8 +197,8 @@ void pe32::make_first_section_header(std::vector<std::uint8_t> &header) {
 
   section_header->misc = static_cast<std::uint32_t>(size + overhead);
   section_header->virtual_address = get_section_header(0)->virtual_address;
-  section_header->characteristics |= 20;
-  section_header->characteristics |= 80;
+  section_header->characteristics |= 0x20;
+  section_header->characteristics |= 0x80;
   if (!is_nx_compatible()) section_header->characteristics |= 0x20000000;
   section_header->characteristics |= 0x40000000;
   section_header->characteristics |= 0x80000000;
@@ -221,8 +225,8 @@ void pe32::make_second_section_header(std::vector<uint8_t> &header,
   section_header->size_of_raw_data =
       static_cast<std::uint32_t>(t_size + overhead);
   section_header->pointer_to_raw_data = get_optional_header()->size_of_headers;
-  section_header->characteristics |= 20;
-  section_header->characteristics |= 40;
+  section_header->characteristics |= 0x20;
+  section_header->characteristics |= 0x40;
   section_header->characteristics |= 0x20000000;
   section_header->characteristics |= 0x40000000;
   section_header->characteristics |= 0x80000000;

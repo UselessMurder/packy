@@ -367,6 +367,15 @@ void base_pe::is_valid_data_directories(std::uint32_t count,
     if (position + directories[i].size > file->get_file_size())
       throw std::domain_error("Data directory location is outsize of the file");
   }
+
+  if(directories[11].size != 0 || directories[11].virtual_address != 0)
+    throw std::domain_error("Bount import is not supported yet :(");
+
+  if(directories[13].size != 0 || directories[11].virtual_address != 0)
+    throw std::domain_error("Delay import is not supported yet :(");
+
+  if(directories[14].size != 0 || directories[14].virtual_address != 0)
+    throw std::domain_error("DotNet is not supported yet :(");
 }
 
 std::uint64_t base_pe::rva_to_file_position(std::uint32_t rva) {

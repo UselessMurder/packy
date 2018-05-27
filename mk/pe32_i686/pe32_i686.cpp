@@ -10,7 +10,10 @@
 
 namespace mk {
 pe32_i686::pe32_i686() : base_mk() {
-  tls_rva = 0;
+  tls_directory_params.first = 0;
+  tls_directory_params.second = 0;
+  import_directory_params.first = 0;
+  import_directory_params.second = 0;
   resource_directory_params.first = 0;
   resource_directory_params.second = 0;
   export_rva = 0;
@@ -20,7 +23,10 @@ pe32_i686::pe32_i686() : base_mk() {
   init_traps();
 }
 pe32_i686::pe32_i686(fs::out_file *out_file) : base_mk(out_file) {
-  tls_rva = 0;
+  tls_directory_params.first = 0;
+  tls_directory_params.second = 0;
+  import_directory_params.first = 0;
+  import_directory_params.second = 0;
   resource_directory_params.first = 0;
   resource_directory_params.second = 0;
   export_rva = 0;
@@ -706,7 +712,7 @@ void pe32_i686::exception_prologue(eg::key_value_storage &ectx) {
       e.shd(ectx.get_value<std::string>("handler_name")));
   e.f(fl, "push_rd", e.g(tmp_1));
   e.f(fl, "clear_rd", e.g(tmp_1));
-  e.f(fl, "push_serd", e.g(fs_), e.g(tmp_1));
+  e.f(fl, "push_serd_rd", e.g(fs_), e.g(tmp_1));
   e.f(new_fl, "mov_serd_rd", e.g(fs_), e.g(tmp_1), e.g(esp_));
   ectx.set_value("tmp_1", tmp_1);
   ectx.set_value("tmp_2", tmp_2);
@@ -794,21 +800,25 @@ void pe32_i686::insert_except_handler(eg::key_value_storage &ectx) {
   e.end();
 }
 
-void pe32_i686::end_init_code() {
-  auto fctx = global::cs.generate_unique_number("fctx");
-
-  e.start_segment("exit_stub");
-  e.grab_group("common");
-  e.bs("tmp", "common", fctx);
-  e.f(e.gg({"fu"}), "push_rd", e.g("tmp"));
-  e.f(e.gg({"fu"}), "abs_r", e.g("tmp"), e.shd("thread_exit"));
-  e.f(e.gg({"fu"}), "mov_mb_vb", e.g("tmp"), std::uint64_t(1));
-  e.f(e.gg({"fu"}), "pop_rd", e.g("tmp"));
-  e.fr("tmp");
-  e.f(e.gg({"fu"}), "ret");
-  e.free_group("common");
+void pe32_i686::init_forever_crash_loop() {
+  std::vector<uint8_t> interrupts(256);
+  for (uint16_t i = 0; i < 256; i++) interrupts[i] = i;
+  global::rc.random_shuffle_vector(&interrupts);
+  e.start_segment("crash_loop");
+  for (uint8_t i = 0; i < 5; i++) {
+    e.f(e.gg({"fu"}), "int_vb", std::uint64_t(interrupts[i]));
+  }
+  e.f(e.gg({"fu"}), "jump", e.shd("crash_stub"));
   e.end();
+  e.start_segment("crash_stub");
+  for (uint8_t i = 0; i < 5; i++) {
+    e.f(e.gg({"fu"}), "int_vb", std::uint64_t(interrupts[i]));
+  }
+  e.f(e.gg({"fu"}), "jump", e.shd("crash_loop"));
+  e.end();
+}
 
+void pe32_i686::end_init_code() {
   e.start_segment("way_out");
   e.bf("accum", "common");
   e.bf("target", "common");
@@ -836,35 +846,44 @@ void pe32_i686::end_init_code() {
 
 void pe32_i686::clear_exit_init_code() {
   e.start_segment("clear_exit");
-  e.bf("accum", "common");
-  e.bf("target", "common");
-  e.f("abs_r", e.g("target"),
-      e.shd("context_storage_" +
-            std::to_string(global::rc.generate_random_number() % 256)));
-  for (uint8_t i = 0; i < 8; i++) {
-    e.f("mov_rd_md", e.g("accum"), e.g("target"));
-    e.f("push_rd", e.g("accum"));
-    e.f("add_rd_vd", e.g("target"), std::uint64_t(4));
-  }
-  e.fr("accum");
-  e.fr("target");
-  e.grab_group("common");
-  e.f("popad");
-  e.bsp("esp_", eg::i8086::esp);
-  e.f(e.gg({"fu"}), "add_rd_vd", e.g("esp_"), e.frszd());
-  e.fr("esp_");
-  e.f(e.gg({"fu"}), "ret");
-  e.free_group("common");
+  e.f(e.gg({"fu"}), "push_vd", std::uint64_t(0));
+  e.f(e.gg({"fu"}), "jump", e.shd("base_exit"));
   e.end();
 }
 
 void pe32_i686::error_exit_init_code() {
+  e.start_segment("error_not_found");
+  e.bf("tmp", "common");
+  e.f("load_rd", e.g("tmp"), e.vshd("target"));
+  e.f("push_vd", std::uint64_t(0x10));
+  e.f("push_vd", std::uint64_t(0));
+  e.f("push_rd", e.g("tmp"));
+  e.f("push_vd", std::uint64_t(0));
+  e.f("abs_r", e.g("tmp"), e.shd("MessageBoxA_str_rva_a"));
+  e.f("mov_rd_md", e.g("tmp"), e.g("tmp"));
+  e.f("call_rd", e.g("tmp"));
+  e.fr("tmp");
+  e.f("jump", e.shd("error_exit"));
+  e.end();
+
+
+
   e.start_segment("error_exit");
-  e.f("push_vd", std::uint64_t(1));
-  e.f("push_vd", std::uint64_t(0xFFFFFFFF));
-  e.bsp("ebp_", eg::i8086::ebp);
-  e.f("call_smd", e.g("ebp_"), "-", e.vshd("NtTerminateProcess"));
-  e.fr("ebp_");
+  e.f(e.gg({"fu"}), "push_vd", std::uint64_t(1));
+  e.f(e.gg({"fu"}), "jump", e.shd("base_exit"));
+  e.end();
+}
+
+void pe32_i686::base_exit_init_code() {
+  e.start_segment("base_exit");
+  e.f(e.gg({"fu"}), "push_vd", std::uint64_t(0xFFFFFFFF));
+  e.bf("tmp", "common");
+  e.f(e.gg({"fu"}), "abs_r", e.g("tmp"), e.shd("exit_storage"));
+  e.f(e.gg({"fu"}), "mov_rd_md", e.g("tmp"), e.g("tmp"));
+  e.f(e.gg({"fu"}), "xor_rd_vd", e.g("tmp"), std::uint64_t(local_keys["exit"]));
+  e.f(e.gg({"fu"}), "call_rd", e.g("tmp"));
+  e.fr("tmp");
+  e.f(e.gg({"fu"}), "jump", e.shd("crash_loop"));
   e.end();
 }
 
@@ -1058,11 +1077,7 @@ void pe32_i686::find_library_init_code() {
   e.f("call_smd", e.g("ebp_"), "-", e.vshd("LoadLibrary"));
   e.fr("ebp_");
   e.f("test_rd_rd", e.g("eax_"), e.g("eax_"));
-  e.f("branch", "nz", e.shd("dll_found"), e.shd("dll_not_load"));
-  e.end();
-
-  e.start_segment("dll_not_load");
-  e.f("jump", e.shd("error_exit"));
+  e.f("branch", "nz", e.shd("dll_found"), e.shd("error_not_found"));
   e.end();
 
   e.start_segment("dll_found");
@@ -1087,11 +1102,7 @@ void pe32_i686::load_function_init_code() {
   e.f("call_smd", e.g("ebp_"), "-", e.vshd("GetProcAddr"));
   e.fr("ebp_");
   e.f("test_rd_rd", e.g("eax_"), e.g("eax_"));
-  e.f("branch", "nz", e.shd("function_found"), e.shd("function_not_found"));
-  e.end();
-
-  e.start_segment("function_not_found");
-  e.f("jump", e.shd("error_exit"));
+  e.f("branch", "nz", e.shd("function_found"), e.shd("error_not_found"));
   e.end();
 
   e.start_segment("function_found");
@@ -1339,6 +1350,41 @@ void pe32_i686::build_reloc_stub() {
   e.fr("D");
 }
 
+void pe32_i686::build_import_directory() {
+  std::vector<uint8_t> user32dll = {0x55, 0x53, 0x45, 0x52, 0x33, 0x32,
+                                    0x2e, 0x44, 0x4c, 0x4c, 0x0,  0x0};
+
+  std::vector<uint8_t> messageboxa = {0x0,  0x0,  0x4d, 0x65, 0x73, 0x73, 0x61,
+                                      0x67, 0x65, 0x42, 0x6f, 0x78, 0x41, 0x0};
+
+  e.set_address_alignment("import_directory", 4);
+
+  e.start_segment("import_directory");
+  e.add_address("address_of_int_user32_table", "int_user32_table",
+                std::uint64_t(0));
+  e.add_data("import_timestamp_and_forward_chain_user32", 8);
+  e.add_address("rva_user32_dll", "user32_dll_str", std::uint64_t(0));
+  e.add_address("address_of_iat_user32_table", "iat_user32_table",
+                std::uint64_t(0));
+  e.add_data("empty_import_thunk", 20);
+
+  e.end();
+
+  e.add_data("user32_dll_str", &user32dll);
+
+  e.start_segment("int_user32_table");
+  e.add_address("MessageBoxA_str_rva_n", "MessageBoxA_str", 0);
+  e.add_data("empty_int_record_user32", 4);
+  e.end();
+
+  e.start_segment("iat_user32_table");
+  e.add_address("MessageBoxA_str_rva_a", "MessageBoxA_str", 0);
+  e.add_data("empty_iat_record_user32", 4);
+  e.end();
+
+  e.add_data("MessageBoxA_str", &messageboxa);
+}
+
 void pe32_i686::build_tls_stub() {
   e.start_segment("tls_directory");
   std::vector<std::uint8_t> tmp;
@@ -1380,15 +1426,30 @@ void pe32_i686::build_tls_stub() {
         get_ld()->get_tls_directory()->start_address_of_raw_data -
             get_ld()->get_optional_header()->image_base,
         diff);
-
     e.add_data("tls_data", &tmp);
   }
-
   e.add_data("tls_index", 4);
 
   e.start_segment("tls_callbacks");
   e.add_address("first_line_addr", "first_line",
                 get_ld()->get_optional_header()->image_base);
+  bool make_callbacks = false;
+  if (get_ld()->is_tls_exists()) {
+    std::uint32_t call_count = 0;
+    std::uint32_t call_seek =
+        get_ld()->get_tls_directory()->address_of_call_backs -
+        get_ld()->get_optional_header()->image_base;
+
+    while (*(reinterpret_cast<std::uint32_t *>(
+               &(*get_ld()->get_image())[call_seek])) != 0) {
+      call_count += 4;
+      call_seek += 4;
+    }
+    if (call_count != 0) {
+      make_callbacks = true;
+      e.add_data("tls_real_callbacks", call_count);
+    }
+  }
   e.add_data("tls_callbacks_end", 4);
   e.end();
 
@@ -1410,10 +1471,12 @@ void pe32_i686::build_tls_stub() {
                       get_ld()->get_optional_header()->image_base));
     e.f("add_rd_vd", e.g("src"), std::uint64_t(4));
     e.f("mov_md_rd", e.g("src"), e.g("data"));
-    e.bsp("_ebp", eg::i8086::ebp);
-    e.f("mov_rd_smd", e.g("dst"), e.g("_ebp"), "-", e.vshd("base"));
-    e.fr("_ebp");
+    e.f("load_rd", e.g("dst"), e.vshd("base"));
     e.fr("src");
+    if (make_callbacks) {
+      e.bf("seek", "common");
+      e.f("abs_r", e.g("seek"), e.shd("tls_real_callbacks"));
+    }
     e.f("jump", e.shd("tls_stub_compare"));
     e.end();
 
@@ -1423,19 +1486,33 @@ void pe32_i686::build_tls_stub() {
     e.end();
 
     e.start_segment("tls_stub_loop");
-    e.push_registers({e.g("dst"), e.g("data")});
+    if (make_callbacks)
+      e.push_registers({e.g("dst"), e.g("data"), e.g("seek")});
+    else
+      e.push_registers({e.g("dst"), e.g("data")});
     e.f("push_vd", std::uint64_t(0));
     e.f("push_vd", std::uint64_t(1));
     e.f("push_rd", e.g("dst"));
     e.f("call_md", e.g("data"));
-    e.pop_registers({e.g("dst"), e.g("data")});
+    if (make_callbacks)
+      e.pop_registers({e.g("dst"), e.g("data"), e.g("seek")});
+    else
+      e.pop_registers({e.g("dst"), e.g("data")});
+    if (make_callbacks) {
+      e.bf("tmp", "common");
+      e.f("mov_rd_md", e.g("tmp"), e.g("data"));
+      e.f("mov_md_rd", e.g("seek"), e.g("tmp"));
+      e.fr("tmp");
+    }
     e.f("add_rd_vd", e.g("data"), std::uint64_t(4));
+    if (make_callbacks) e.f("add_rd_vd", e.g("seek"), std::uint64_t(4));
     e.f("jump", e.shd("tls_stub_compare"));
     e.end();
 
     e.start_segment("tls_stub_end");
     e.fr("data");
     e.fr("dst");
+    if (make_callbacks) e.fr("seek");
     get_ld()->wipe_tls_directory();
   }
   e.f("jump", e.shd("mprotect"));
@@ -1574,7 +1651,6 @@ void pe32_i686::build_resources() {
         if (et.str) data_entries_offset += et.self_id.size();
       }
     }
-    for (auto rs : ct->resources) data_entries_offset += rs.second.data.size();
     std::vector<std::pair<uint32_t, uint64_t>> offsets;
     offsets.push_back(std::make_pair(data_entries_offset, 0xFFFFFFFFFFFFFFFF));
     std::vector<uint8_t> tmp_1;
@@ -1585,11 +1661,6 @@ void pe32_i686::build_resources() {
     tmp_1.insert(tmp_1.end(), tmp_2.begin(), tmp_2.end());
     e.start_segment("resource_diretory");
     e.add_data("resources_dirs", &tmp_1);
-    for (auto of : offsets) {
-      if (of.second == 0xFFFFFFFFFFFFFFFF) break;
-      e.add_data("resource_" + std::to_string(of.second),
-                 (&ct->resources[of.second].data));
-    }
     e.add_processed_data(
         "resources_data_entries",
         [offsets, ct](eg::build_root *root, eg::dependence_line *dl) {
@@ -1621,10 +1692,16 @@ void pe32_i686::build_resources() {
             }
             dl->set_flag(eg::type_flags::node_cached);
           } else
-            entries.resize(offsets.size() *
+            entries.resize((offsets.size() - 1) *
                            sizeof(ld::pe::image_resource_data_entry));
           dl->set_content(&entries);
         });
+
+    for (auto of : offsets) {
+      if (of.second == 0xFFFFFFFFFFFFFFFF) break;
+      e.add_data("resource_" + std::to_string(of.second),
+                 (&ct->resources[of.second].data));
+    }
     e.end();
   }
 }
@@ -1844,16 +1921,16 @@ void pe32_i686::build_mprotect_stub() {
   }
   e.start_segment("s_right_set_" + std::to_string(s_counter));
   s_counter++;
-  // e.bf("beg", "common");
-  // e.f("abs_r", e.g("beg"), get_ld()->get_begin_of_stub());
-  // e.push_registers({e.g("trash")});
-  // e.f("push_rd", e.g("trash"));
-  // e.f("push_vd", std::uint64_t(0x20));
-  // e.f("push_vd", e.ssd());
-  // e.f("push_rd", e.g("beg"));
-  // e.f("call_smd", e.g("ebp_"), "-", e.vshd("VirtualProtect"));
-  // e.pop_registers({e.g("trash")});
-  // e.fr("beg");
+  e.bf("beg", "common");
+  e.f("abs_r", e.g("beg"), get_ld()->get_begin_of_stub());
+  e.push_registers({e.g("trash")});
+  e.f("push_rd", e.g("trash"));
+  e.f("push_vd", std::uint64_t(0x20));
+  e.f("push_vd", e.ssd());
+  e.f("push_rd", e.g("beg"));
+  e.f("call_smd", e.g("ebp_"), "-", e.vshd("VirtualProtect"));
+  e.pop_registers({e.g("trash")});
+  e.fr("beg");
   e.fr("trash");
   e.fr("ebp_");
   e.fr("eax_");
@@ -1865,11 +1942,39 @@ void pe32_i686::build_context_forks() {
   for (std::uint32_t i = 0; i < 256; i++)
     e.add_data("context_storage_" + std::to_string(i), 32);
 
+  auto fctx = global::cs.generate_unique_number("fctx");
+
   e.start_segment("fork_ctx");
   e.grab_group("unsafe");
+  e.bs("tmp", "unsafe", fctx);
+  e.bsp("esp_", eg::i8086::esp);
+  e.f(e.gg({"fu"}), "push_rd", e.g("tmp"));
+  e.f(e.gg({"fu"}), "abs_r", e.g("tmp"), e.shd("clear_exit"));
+  e.f(e.gg({"fu", "ss"}), "add_rd_vd", e.g("esp_"), std::uint64_t(8));
+  e.f(e.gg({"fu", "ss"}), "push_rd", e.g("tmp"));
+  e.f(e.gg({"fu", "ss"}), "sub_rd_vd", e.g("esp_"), std::uint64_t(4));
+  e.f(e.gg({"fu"}), "pop_rd", e.g("tmp"));
+  e.fr("tmp");
+  e.fr("esp_");
   e.f(e.gg({"fu"}), "pushad");
   e.free_group("unsafe");
 
+  e.bf("flag_addr", "unsafe");
+  e.f(e.gg({"fu"}), "abs_r", e.g("flag_addr"), e.shd("tls_is_called"));
+  e.f(e.gg({"fu"}), "cmp_mb_vb", e.g("flag_addr"), std::uint64_t(1));
+  e.f(e.gg({"fu"}), "branch", "e", e.shd("begin_forks"), e.shd("call_tls"));
+  e.fr("flag_addr");
+  e.end();
+
+  e.start_segment("call_tls");
+  e.f(e.gg({"fu"}), "push_rd", std::uint64_t(0));
+  e.f(e.gg({"fu"}), "push_rd", std::uint64_t(0));
+  e.f(e.gg({"fu"}), "push_rd", std::uint64_t(0));
+  e.f(e.gg({"fu"}), "invoke", e.shd("first_line"));
+  e.f(e.gg({"fu"}), "jump", e.shd("begin_forks"));
+  e.end();
+
+  e.start_segment("begin_forks");
   e.bf("src", "unsafe");
   e.bsp("esp_", eg::i8086::esp);
   e.f(e.gg({"fu", "ss"}), "mov_rd_rd", e.g("src"), e.g("esp_"));
@@ -1903,7 +2008,7 @@ void pe32_i686::build_context_forks() {
       e.f(e.gg({"fu"}), "push_rd", e.g("accum"));
       auto cid = add_container();
       add_to_container(cid, "target", "store_ctx_" + std::to_string(i - 1));
-      add_to_container(cid, "if_error", std::string("fast_exit"));
+      add_to_container(cid, "if_error", std::string("error_exit"));
       insert_random_trap({"undep", "unapi"}, cid, e.gg({"fu"}));
       remove_container(cid);
       e.f(e.gg({"fu"}), "pop_rd", e.g("accum"));
@@ -1933,20 +2038,6 @@ void pe32_i686::build_context_forks() {
   e.f(e.gg({"fu"}), "jump", e.shd("set_base"));
   e.fr("esp_");
   e.end();
-
-  e.start_segment("fast_exit");
-  e.bf("tmp", "unsafe");
-  for (uint8_t i = 0; i < 4; i++) e.f(e.gg({"fu"}), "pop_rd", e.g("tmp"));
-  e.fr("tmp");
-  e.bf("tmp", "unsafe");
-  e.f(e.gg({"fu"}), "abs_r", e.g("tmp"), e.shd("thread_exit"));
-  e.f(e.gg({"fu"}), "mov_mb_vb", e.g("tmp"), std::uint64_t(1));
-  e.fr("tmp");
-  e.grab_group("unsafe");
-  e.f(e.gg({"fu"}), "popad");
-  e.f(e.gg({"fu"}), "ret");
-  e.free_group("unsafe");
-  e.end();
 }
 
 void pe32_i686::load_apis(std::map<std::string, std::uint32_t> &requirements,
@@ -1966,12 +2057,12 @@ void pe32_i686::load_apis(std::map<std::string, std::uint32_t> &requirements,
     e.fr("tmp");
 
     if (global::rc.may_be(15)) {
+      insert_decrypt(seg);
       if (enable) {
-        insert_decrypt(seg);
 #ifdef CHECK_DEBUGGER
         auto cid = add_container();
         add_to_container(cid, "target", seg);
-        add_to_container(cid, "if_error", std::string("clear_exit"));
+        add_to_container(cid, "if_error", std::string("error_exit"));
         insert_random_trap({"unapi"}, cid, 0);
         remove_container(cid);
 #endif
@@ -1989,12 +2080,12 @@ void pe32_i686::load_apis(std::map<std::string, std::uint32_t> &requirements,
 #ifdef CHECK_DEBUGGER
         auto cid = add_container();
         add_to_container(cid, "target", last_s);
-        add_to_container(cid, "if_error", std::string("clear_exit"));
+        add_to_container(cid, "if_error", std::string("error_exit"));
         insert_random_trap({"unapi"}, cid, 0);
         remove_container(cid);
 #endif
-        insert_encrypt(last_s);
       }
+      insert_encrypt(last_s);
     }
 
     last_s = seg;
@@ -2052,7 +2143,6 @@ void pe32_i686::init_guard_routine() {
   e.free_group("common");
   set_base();
   std::map<std::string, uint32_t> g_apis;
-  g_apis["NtTerminateProcess"] = get_NtTerminateProcess_hash();
   g_apis["NtSetInformationThread"] = get_NtSetInformationThread_hash();
   g_apis["GetVersionEx"] = get_GetVersionEx_hash();
   g_apis["NtQueryInformationProcess"] = get_NtQueryInformationProcess_hash();
@@ -2070,6 +2160,10 @@ void pe32_i686::init_guard_routine() {
   detach_debugger("tmp");
   e.fr("tmp");
 #endif
+  e.bf("tmp", "common");
+  e.f("abs_r", e.g("tmp"), e.shd("ok_guard"));
+  e.f("mov_mb_vb", e.g("tmp"), std::uint64_t(1));
+  e.fr("tmp");
   e.f("jump", e.shd("guard_stub_1"));
   e.end();
 
@@ -2094,11 +2188,7 @@ void pe32_i686::init_guard_routine() {
   e.f("push_vd", std::uint64_t(200));
   e.f("call_smd", e.g("ebp_"), "-", e.vshd("Sleep"));
   e.fr("ebp_");
-  e.bf("tmp", "common");
-  e.f("abs_r", e.g("tmp"), e.shd("thread_exit"));
-  e.f("cmp_mb_vb", e.g("tmp"), std::uint64_t(1));
-  e.fr("tmp");
-  e.f("branch", "e", e.shd("guard_end"), e.shd("guard_stub_1"));
+  e.f("jump", e.shd("guard_stub_1"));
   e.end();
 
   e.start_segment("guard_end");
@@ -2120,8 +2210,15 @@ std::uint32_t pe32_i686::build_code(std::vector<std::uint8_t> *stub,
 
   e.add_data("image", data);
 
-  e.add_data("thread_ready", 1);
-  e.add_data("thread_exit", 1);
+  e.add_data("tls_is_called", 1);
+
+  e.add_data("exit_storage", 4);
+
+  e.add_data("ok_tls", 1);
+  e.add_data("ok_guard", 1);
+
+  local_keys["exit"] =
+      static_cast<uint32_t>(global::rc.generate_random_number());
 
   e.start_frame("general");
   e.copy_fundamental();
@@ -2137,16 +2234,15 @@ std::uint32_t pe32_i686::build_code(std::vector<std::uint8_t> *stub,
   e.add_var("LoadLibrary", 4);
   e.add_var("GetModuleHandle", 4);
   e.add_var("GetProcAddr", 4);
-  e.add_var("NtTerminateProcess", 4);
   e.add_var("VirtualProtect", 4);
   e.add_var("GetVersionEx", 4);
   e.add_var("NtQueryInformationProcess", 4);
-  e.add_var("NtSetInformationThread", 4);
   e.add_var("GetThreadContext", 4);
   e.add_var("SetThreadContext", 4);
 
   search_expx_init_code();
   get_apix_init_code();
+  base_exit_init_code();
   error_exit_init_code();
   clear_exit_init_code();
   end_init_code();
@@ -2155,11 +2251,13 @@ std::uint32_t pe32_i686::build_code(std::vector<std::uint8_t> *stub,
   vista_or_higher_init_code();
   build_mprotect_stub();
   build_import_stub();
+  build_import_directory();
   build_tls_stub();
   build_reloc_stub();
   build_reloc_table();
   build_resources();
   build_export();
+  init_forever_crash_loop();
 
   build_context_forks();
 
@@ -2172,10 +2270,6 @@ std::uint32_t pe32_i686::build_code(std::vector<std::uint8_t> *stub,
   e.end();
 
   e.start_segment("set_base");
-  e.bf("tmp", "unsafe");
-  e.f(e.gg({"fu"}), "abs_r", e.g("tmp"), e.shd("exit_stub"));
-  e.f(e.gg({"fu"}), "push_rd", e.g("tmp"));
-  e.fr("tmp");
   set_base();
 #ifdef CHECK_DEBUGGER
   auto cid = add_container();
@@ -2192,7 +2286,6 @@ std::uint32_t pe32_i686::build_code(std::vector<std::uint8_t> *stub,
   g_apis["LoadLibrary"] = get_LoadLibrary_hash();
   g_apis["GetProcAddr"] = get_GetProcAddress_hash();
   g_apis["GetModuleHandle"] = get_GetModuleHandle_hash();
-  g_apis["NtTerminateProcess"] = get_NtTerminateProcess_hash();
   g_apis["VirtualProtect"] = get_VirtualProtect_hash();
   g_apis["NtQueryInformationProcess"] = get_NtQueryInformationProcess_hash();
   g_apis["GetVersionEx"] = get_GetVersionEx_hash();
@@ -2210,7 +2303,11 @@ std::uint32_t pe32_i686::build_code(std::vector<std::uint8_t> *stub,
   insert_trap("integrity_check", cid, 0);
   remove_container(cid);
 #endif
-  e.f("jump", e.shd("decrypt_secondary_key"));
+  e.bf("tmp", "common");
+  e.f("abs_r", e.g("tmp"), e.shd("ok_tls"));
+  e.f("cmp_mb_vb", e.g("tmp"), std::uint64_t(1));
+  e.f("branch", "e", e.shd("decrypt_secondary_key"), e.shd("error_exit"));
+  e.fr("tmp");
   e.end();
 
   e.enable_alter("image", "some_key", "aes");
@@ -2227,7 +2324,23 @@ std::uint32_t pe32_i686::build_code(std::vector<std::uint8_t> *stub,
   e.f("store_vd", e.vshd("count"), e.fszd("some_key"));
   e.f("store_vd", e.vshd("dword_key"), e.kd("secondary_key", 32, 0));
   e.f("invoke", e.shd("alter_d"));
-  e.f("jump", e.shd("unpack_image"));
+  e.bf("tmp", "common");
+  e.f("abs_r", e.g("tmp"), e.shd("ok_guard"));
+  e.f("cmp_mb_vb", e.g("tmp"), std::uint64_t(1));
+  e.fr("tmp");
+  e.bf("tmp", "common");
+  e.f("abs_r", e.g("tmp"), e.shd("ok_guard"));
+  e.f("jump", e.shd("wait_stub_1"));
+  e.end();
+
+  e.start_segment("wait_stub_1");
+  e.f("cmp_mb_vb", e.g("tmp"), std::uint64_t(1));
+  e.f("branch", "e", e.shd("unpack_image"), e.shd("wait_stub_2"));
+  e.end();
+
+  e.start_segment("wait_stub_2");
+  e.f("jump", e.shd("wait_stub_1"));
+  e.fr("tmp");
   e.end();
 
   e.start_segment("unpack_image");
@@ -2253,8 +2366,8 @@ std::uint32_t pe32_i686::build_code(std::vector<std::uint8_t> *stub,
   e.copy_var("dll_base", "general");
   e.copy_var("func", "general");
   e.add_var("align", 3);
-  e.copy_var("NtTerminateProcess", "general");
-  e.copy_var("NtSetInformationThread", "general");
+  e.add_var("NtTerminateProcess", 4);
+  e.add_var("NtSetInformationThread", 4);
   e.add_var("CreateThread", 4);
 
   e.start_segment("first_line");
@@ -2264,7 +2377,7 @@ std::uint32_t pe32_i686::build_code(std::vector<std::uint8_t> *stub,
   set_base();
   e.bf("flag_addr", "common");
   e.bf("flag", "base");
-  e.f("abs_r", e.g("flag_addr"), e.shd("thread_ready"));
+  e.f("abs_r", e.g("flag_addr"), e.shd("tls_is_called"));
   e.f("mov_rb_mb", e.g("flag", "lb"), e.g("flag_addr"));
   e.f("test_rb_rb", e.g("flag", "lb"), e.g("flag", "lb"));
   e.f("branch", "nz", e.shd("first_line_end"), e.shd("first_line_apis"));
@@ -2281,6 +2394,15 @@ std::uint32_t pe32_i686::build_code(std::vector<std::uint8_t> *stub,
   load_apis(s_apis, "first_line_checks", false);
 
   e.start_segment("first_line_checks");
+  e.bf("tmp", "common");
+  e.f("load_rd", e.g("tmp"), e.vshd("NtTerminateProcess"));
+  e.f("xor_rd_vd", e.g("tmp"), std::uint64_t(local_keys["exit"]));
+  e.bf("exit_s", "common");
+  e.f("abs_r", e.g("exit_s"), e.shd("exit_storage"));
+  e.f("mov_md_rd", e.g("exit_s"), e.g("tmp"));
+  e.fr("exit_s");
+  e.fr("tmp");
+
 #ifdef CHECK_DEBUGGER
   e.bf("tmp", "common");
   e.f("mov_rd_vd", e.g("tmp"), std::uint64_t(0xFFFFFFFE));
@@ -2294,11 +2416,14 @@ std::uint32_t pe32_i686::build_code(std::vector<std::uint8_t> *stub,
   insert_trap("nt_global_flag", cid, 0);
   remove_container(cid);
 #endif
+  insert_decrypt("create_thread");
   e.f("jump", e.shd("create_thread"));
   e.end();
 
   e.start_segment("create_thread");
   e.bf("tmp", "common");
+  e.f("abs_r", e.g("tmp"), e.shd("ok_tls"));
+  e.f("mov_mb_vb", e.g("tmp"), std::uint64_t(1));
   e.f("abs_r", e.g("tmp"), e.shd("guard_routine"));
   e.bsp("ebp_", eg::i8086::ebp);
   e.f("push_vd", std::uint64_t(0));
@@ -2333,13 +2458,12 @@ std::uint32_t pe32_i686::build_code(std::vector<std::uint8_t> *stub,
   e.copy_var("func", "general");
   e.copy_var("os_switch", "general");
   e.copy_var("align", "general");
-  e.copy_var("NtTerminateProcess", "general");
-  e.copy_var("NtSetInformationThread", "general");
-  e.copy_var("GetVersionEx", "general");
-  e.copy_var("NtQueryInformationProcess", "general");
-  e.copy_var("GetThreadContext", "general");
-  e.copy_var("SetThreadContext", "general");
+  e.add_var("NtSetInformationThread", 4);
   e.add_var("Sleep", 4);
+  e.copy_var("GetVersionEx", "general");
+  e.add_var("NtQueryInformationProcess", 4);
+  e.add_var("GetThreadContext", 4);
+  e.add_var("SetThreadContext", 4);
 
   init_guard_routine();
 
@@ -2347,7 +2471,15 @@ std::uint32_t pe32_i686::build_code(std::vector<std::uint8_t> *stub,
 
   e.build(stub);
 
-  tls_rva = static_cast<std::uint32_t>(e.get_memory_rva("tls_directory"));
+  import_directory_params.first =
+      static_cast<std::uint32_t>(e.get_memory_rva("import_directory"));
+  import_directory_params.second =
+      static_cast<std::uint32_t>(e.get_memory_payload_size("import_directory"));
+
+  tls_directory_params.first =
+      static_cast<std::uint32_t>(e.get_memory_rva("tls_directory"));
+  tls_directory_params.second =
+      static_cast<std::uint32_t>(e.get_memory_payload_size("tls_directory"));
 
   reloc_directory_params.first =
       static_cast<std::uint32_t>(e.get_memory_rva("reloc_directory"));
@@ -2380,8 +2512,8 @@ void pe32_i686::make() {
   cmpr.compress(data);
   std::uint32_t begin = build_code(&stub, &data);
   write_header(get_ld()->get_rebuilded_header(
-      stub.size(), begin, tls_rva, reloc_directory_params,
-      resource_directory_params, export_rva));
+      stub.size(), begin, tls_directory_params, reloc_directory_params,
+      resource_directory_params, export_rva, import_directory_params));
   get_ld()->resize_with_file_align(&stub);
   write_data(&stub);
   file->close();

@@ -29,10 +29,12 @@ class pe32 : public base_pe {
   machine_types get_machine_type();
   loader_types get_loader_type();
   std::vector<uint8_t> get_rebuilded_header(
-      std::uint32_t stub_size, std::uint32_t code_begin, std::uint32_t tls_rva,
+      std::uint32_t stub_size, std::uint32_t code_begin,
+      std::pair<std::uint32_t, std::uint32_t> tls_directory,
       std::pair<std::uint32_t, std::uint32_t> reloc_directory,
       std::pair<std::uint32_t, std::uint32_t> resource_directory,
-      std::uint32_t export_rva);
+      std::uint32_t export_rva,
+      std::pair<std::uint32_t, std::uint32_t> import_directory);
   std::vector<uint8_t> get_protected_data();
   std::uint64_t get_real_image_begin();
   std::uint64_t get_real_image_size();

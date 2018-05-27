@@ -33,6 +33,22 @@ std::uint64_t memory_piece::get_payload_size() { return size; }
 
 build_states memory_piece::get_state() { return self_state; }
 
+align_stub::align_stub(node *parent) : memory_piece(parent) {}
+align_stub::~align_stub() {}
+void align_stub::set_size(uint64_t new_size) { size = new_size; }
+void align_stub::get_content(std::vector<std::uint8_t> *content,
+                             global::flag_container flags) {
+  for (uint64_t i = 0; i < size; i++)
+    content->push_back(
+        static_cast<uint8_t>(global::rc.generate_random_number()));
+}
+
+std::string align_stub::to_string() {
+  std::stringstream ss;
+  ss << "stub:" << shift << "@" << size << "(" << get_object_id() << "):\n";
+  return ss.str();
+}
+
 group::group(node *parent) : memory_piece(parent) {
   set_flag(type_flags::memory_group);
 }
@@ -289,7 +305,8 @@ void code_line::rebuild(std::uint8_t build_code) {
     for (auto ch : childs)
       if (ch->check_flag(type_flags::build_part)) {
         ss << node_cast<part>(ch)->to_string();
-        if(ch->check_flag(type_flags::dependence) || ch->check_flag(type_flags::will_balanced))
+        if (ch->check_flag(type_flags::dependence) ||
+            ch->check_flag(type_flags::will_balanced))
           simple = false;
       }
 
@@ -300,7 +317,7 @@ void code_line::rebuild(std::uint8_t build_code) {
     size = code.size();
     if (align_value != 1) global::align(size, overhead, align_value);
 
-    if(!simple || check_flag(type_flags::use_shift))
+    if (!simple || check_flag(type_flags::use_shift))
       self_state = root->get_state();
     else
       self_state = build_states::done;
