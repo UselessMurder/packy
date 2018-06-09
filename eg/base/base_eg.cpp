@@ -506,6 +506,13 @@ void build_root::translating(std::vector<uint8_t> *stub) {
           return false;
         }
         mp->set_shift(shift_val);
+
+        if(mp->check_flag(type_flags::need_balance)) {
+          global::flag_container tflags;
+          tflags.set_flag(dependence_flags::content);
+          node_cast<activation_group>(mp)->activate(tflags);
+        }
+
         if (n->check_flag(type_flags::memory_group))
           n->bind_recall(ctx);
         else
@@ -569,6 +576,10 @@ void build_root::get_depended_memory(
         if (ok.first == n->get_object_id() && ok.second == ctx) finally = true;
       } else {
         mp->set_shift(shift_val);
+
+        if(mp->check_flag(type_flags::need_balance))
+          node_cast<activation_group>(mp)->activate(flags);
+
         if ((std::strcmp(memory_name.data(), n->get_name().data()) == 0)) {
           ok.first = n->get_object_id();
           ok.second = ctx;

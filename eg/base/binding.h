@@ -71,7 +71,7 @@ enum nf : std::uint8_t {
   group_random = 14,
   group_sequence_constructed = 15,
   align_code = 16,
-  balanced = 17,
+  need_balance = 17,
   memory_code = 18,
   memory_data = 19,
   memory_dependence = 20,
@@ -86,9 +86,10 @@ enum nf : std::uint8_t {
   fundomental_undepended = 29,
   debug_unprotected = 30,
   will_balanced = 31,
-  do_not_use_shift = 32,
+  ignore_shift = 32,
   full_processed = 33,
-  use_shift = 34
+  shift_depeneded = 34,
+  balance_done = 35
 };
 }
 

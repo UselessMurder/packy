@@ -61,12 +61,11 @@ class activation_group : public group {
     std::function<void(std::map<std::string, part *> *)> balancer;
     invariant *adoptive_parent;
     void run_balancer(node *root);
-    void resize_decorator(std::uint8_t build_code);
 
    public:
     activation_group(node *parent, invariant *adoptive_parent);
     ~activation_group();
-    void set_shift(std::uint64_t current_shift);
+    void activate(global::flag_container flags);
     void set_variables(std::map<std::string, part *> *current_variables);
     void set_balancer(std::function<void(std::map<std::string, part *> *)> current_balancer);
 };

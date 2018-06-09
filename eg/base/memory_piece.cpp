@@ -218,21 +218,11 @@ activation_group::activation_group(node *parent, invariant *second_parent)
     : group(parent) {
   adoptive_parent = second_parent;
   set_flag(type_flags::memory_code);
+  set_flag(type_flags::need_balance);
 }
 activation_group::~activation_group() {}
 
-void activation_group::set_shift(std::uint64_t current_shift) {
-#ifdef USE_CACHE
-  build_root *root = node_cast<build_root>(global_root);
-#elif
-  build_root *root = find_node_by_flag<build_root>(this, type_flags::build_root,
-                                                   {bypass_flags::parents});
-#endif
-
-  run_balancer(root);
-}
-
-void activation_group::resize_decorator(std::uint8_t build_code) {
+void activation_group::activate(global::flag_container flags) {
 #ifdef USE_CACHE
   build_root *root = node_cast<build_root>(global_root);
 #elif
@@ -241,25 +231,30 @@ void activation_group::resize_decorator(std::uint8_t build_code) {
 #endif
 
   if (check_flag(type_flags::ignore)) {
-    if (build_code == 2)
+    if (flags.check_flag(dependence_flags::content))
       throw std::domain_error("Cant`t ignore content request!");
     if (root->get_state() >= build_states::translating) return;
   }
 
   run_balancer(root);
-  resize(root);
 }
 
 void activation_group::run_balancer(node *root) {
   if (node_cast<build_root>(root)->get_state() == build_states::translating) {
-    if (!check_flag(type_flags::balanced)) {
+    if (check_flag(type_flags::need_balance)) {
       form *f = find_node_by_flag<form>(adoptive_parent, type_flags::build_form,
                                         {bypass_flags::parents});
       f->validate_arguments(&variables);
       if (!balancer) return;
       balancer(&variables);
       adoptive_parent->validate_variables(&variables);
-      set_flag(type_flags::balanced);
+
+      for (auto v : variables) {
+        if (v.second->check_flag(type_flags::will_balanced))
+          v.second->set_flag(type_flags::balance_done);
+      }
+
+      unset_flag(type_flags::need_balance);
     }
   }
 }
@@ -307,17 +302,25 @@ void code_line::rebuild(std::uint8_t build_code) {
         ss << node_cast<part>(ch)->to_string();
         if (ch->check_flag(type_flags::dependence) ||
             ch->check_flag(type_flags::will_balanced))
-          simple = false;
+
+          if (root->get_state() == build_states::translating &&
+              ch->check_flag(type_flags::will_balanced) &&
+              !ch->check_flag(type_flags::balance_done))
+            throw std::domain_error(
+                "Cant`t assembly unbalanced part with id: " + std::to_string(
+                    ch->get_object_id()));
+
+        simple = false;
       }
 
-    if (check_flag(type_flags::do_not_use_shift))
+    if (check_flag(type_flags::ignore_shift))
       root->assembly(&code, ss.str(), assembler_name, 0);
     else
       root->assembly(&code, ss.str(), assembler_name, shift);
     size = code.size();
     if (align_value != 1) global::align(size, overhead, align_value);
 
-    if (!simple || check_flag(type_flags::use_shift))
+    if (!simple || check_flag(type_flags::shift_depeneded))
       self_state = root->get_state();
     else
       self_state = build_states::done;

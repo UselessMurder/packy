@@ -13,26 +13,26 @@ MKFILE_PATH := $(dir $(realpath $(firstword $(MAKEFILE_LIST))))
 ifeq ($(OS),Windows_NT)
 	LIB_DIR += -L$(MKFILE_PATH)	
 	LASTFLAGS += -municode
-	APP = main.exe
+	APP = pack.exe
 else
-	APP = main
+	APP = pack
 endif
 
 INC_DIR += -I$(MKFILE_PATH)
-#INC_DIR += -I$(MKFILE_PATH)include
 INC_DIR += -I/usr/include/libr
 LIBS += -L/usr/lib
 LIBS += -lr_asm -lr_util
 LIBS += -lpthread
-#LIBS += -llibboost_filesystem-mt
 LIBS += -lboost_filesystem
-#LIBS += -llibboost_system-mt
 LIBS += -lboost_system
 LIBS += -lcryptopp
 LIBS += -llzo2
 
+#clang
 CPPFLAGS += -std=c++17 -Wc++17-extensions -Ofast -march=native $(INC_DIR)  
-#CPPFLAGS += -std=c++17 -static-libstdc++ -Ofast -march=native $(INC_DIR)  
+
+#gcc
+#CPPFLAGS += -std=c++17 -Ofast -march=native $(INC_DIR)  
 
 OBJECTS = objfiles/main.o
 OBJECTS += objfiles/packy.o

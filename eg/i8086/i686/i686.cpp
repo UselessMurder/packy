@@ -55,7 +55,7 @@ i686::i686() : i8086() {
          {"up", type_flags::debug_unprotected},
          {"fu", type_flags::fundomental_undepended},
          {"rc", type_flags::invariant_recursive},
-         {"sh", type_flags::use_shift}};
+         {"sh", type_flags::shift_depeneded}};
 
   init_assemblers();
   init_invariants();
@@ -104,23 +104,23 @@ void i686::init_assemblers() {
   DEFER(free(bindingsdir););
 
   if (!r_asm_use(assemblers["default"], "x86"))
-    throw std::domain_error("Invalid assembler name");
+    throw std::domain_error("Invalid assembler name: x86");
   if (!r_asm_set_bits(assemblers["default"],
                       get_value<std::uint32_t>("bitness")))
     throw std::domain_error("Invalid bintess");
 
   if (!r_asm_use(assemblers["gas"], "x86.as"))
-    throw std::domain_error("Invalid assembler name");
+    throw std::domain_error("Invalid assembler name: x86.gas");
   if (!r_asm_set_bits(assemblers["gas"], get_value<std::uint32_t>("bitness")))
     throw std::domain_error("Invalid bintess");
 
   if (!r_asm_use(assemblers["nasm"], "x86.nasm"))
-    throw std::domain_error("Invalid assembler name");
+    throw std::domain_error("Invalid assembler name: x86.nasm");
   if (!r_asm_set_bits(assemblers["nasm"], get_value<std::uint32_t>("bitness")))
     throw std::domain_error("Invalid bintess");
 
   if (!r_asm_use(assemblers["olly"], "x86.olly"))
-    throw std::domain_error("Invalid assembler name");
+    throw std::domain_error("Invalid assembler name: x86.olly");
   if (!r_asm_set_bits(assemblers["olly"], get_value<std::uint32_t>("bitness")))
     throw std::domain_error("Invalid bintess");
 }
@@ -1086,7 +1086,7 @@ void i686::init_uncompress() {
   end();
 
   start_segment("uncompress_l2_0");
-  f(gg({"fs"}), "and_rd_vd", g("accum", "lb"), std::uint64_t(3));
+  f(gg({"fs"}), "and_rb_vb", g("accum", "lb"), std::uint64_t(3));
   f("branch", "z", shd("uncompress_l2_2"), shd("uncompress_l2_1"));
   end();
 
@@ -1608,21 +1608,15 @@ void i686::init_invariants() {
       auto reg_ = global::cs.generate_unique_string("pr_regs");
       auto esp_ = global::cs.generate_unique_string("pr_regs");
       auto fctx = global::cs.generate_unique_number("fctx");
-      EG->bss(esp_, esp, fctx); 
-      EG->bs(reg_, "common", fctx);
-      EG->f(fl, "push_rd", EG->g(reg_)); 
-      EG->f(fl, "push_rd", EG->g(reg_));
+      EG->bss(esp_, esp, fctx); EG->bs(reg_, "common", fctx);
+      EG->f(fl, "push_rd", EG->g(reg_)); EG->f(fl, "push_rd", EG->g(reg_));
       EG->f(fl, "abs_r", EG->g(reg_), EG->shd(seg1));
       fl.set_flag(type_flags::stack_safe);
       EG->f(fl, "add_rd_vd", EG->g(esp_), std::uint64_t(8));
       EG->f(fl, "push_rd", EG->g(reg_));
-      EG->f(fl, "sub_rd_vd", EG->g(esp_), std::uint64_t(4)); 
-      EG->fr(esp_);
-      fl.unset_flag(type_flags::stack_safe); 
-      EG->f(fl, "pop_rd", EG->g(reg_));
-      EG->fr(reg_); 
-      EG->f(fl, "jump", VARS["a"]); 
-      EG->end();
+      EG->f(fl, "sub_rd_vd", EG->g(esp_), std::uint64_t(4)); EG->fr(esp_);
+      fl.unset_flag(type_flags::stack_safe); EG->f(fl, "pop_rd", EG->g(reg_));
+      EG->fr(reg_); EG->f(fl, "jump", VARS["a"]); EG->end();
       EG->start_segment(seg1););
 
   iv = make_invariant(cf);
@@ -1769,7 +1763,7 @@ void i686::init_invariants() {
   iv->copy_flags(gg({"fs", "up", "fu"}));
   iv->PROGRAMMER(auto seg1 = global::cs.generate_unique_string("usegment");
                  auto new_fl = CAST;
-                 new_fl.set_flag(type_flags::do_not_use_shift);
+                 new_fl.set_flag(type_flags::ignore_shift);
                  EG->t(new_fl, "call $+5"); start_segment(seg1);
                  EG->f(fl, "pop_rd", VARS["r"]); end();
                  EG->f(fl, "sub_rd_vd", VARS["r"], EG->shd(seg1));
@@ -1795,6 +1789,17 @@ void i686::init_invariants() {
 
   // abs end
 
+  // not begin
+  // not_rd begin
+  cf = make_form("not_rd");
+  cf->add_argument("r");
+
+  iv = make_invariant(cf);
+  iv->copy_flags(gg({"st", "ss", "fs", "up", "fu"}));
+  iv->PROGRAMMER(EG->ta(CAST, "olly", "not ", VARS["r"]););
+  // not_rd end
+  // not end
+
   // clear begin
 
   // clear_rd begin
@@ -1808,6 +1813,13 @@ void i686::init_invariants() {
   iv = make_invariant(cf);
   iv->copy_flags(gg({"st", "fs", "ss", "up", "fu"}));
   iv->PROGRAMMER(EG->f(fl, "mov_rd_vd", VARS["r"], std::uint64_t(0)););
+
+  iv = make_invariant(cf);
+  iv->add_register("r1", "common");
+  iv->copy_flags(gg({"st", "ss", "up", "fu"}));
+  iv->PROGRAMMER(EG->f(fl, "mov_rd_rd", VARS["r1"], VARS["r"]);
+                 EG->f(fl, "not_rd", VARS["r1"]);
+                 EG->f(fl, "and_rd_rd", VARS["r"], VARS["r1"]););
   // clear_rd end
 
   // clear end
@@ -1986,6 +1998,17 @@ void i686::init_invariants() {
   iv->PROGRAMMER(EG->t(CAST, "mov ", VARS["r1"], ",", VARS["r2"]););
 
   iv = make_invariant(cf);
+  iv->copy_flags(gg({"ss", "fu", "rc"}));
+  iv->PROGRAMMER(EG->f(fl, "clear_rd", VARS["r1"]);
+                 EG->f(fl, "add_rd_rd", VARS["r1"], VARS["r2"]););
+
+  iv = make_invariant(cf);
+  iv->add_register("rt", "common");
+  iv->copy_flags(gg({"ss", "fu", "rc"}));
+  iv->PROGRAMMER(EG->f(fl, "mov_rd_rd", VARS["rt"], VARS["r2"]);
+                 EG->f(fl, "mov_rd_rd", VARS["r1"], VARS["rt"]););
+
+  iv = make_invariant(cf);
   iv->copy_flags(gg({"st", "fs", "up", "fu", "rc"}));
   iv->VALIDATOR(
       if (get_part_value<std::string>((*vars)[0]) == esp ||
@@ -2017,6 +2040,14 @@ void i686::init_invariants() {
   cf = make_form("mov_rd_md");
   cf->add_argument("r1");
   cf->add_argument("r2");
+
+  iv = make_invariant(cf);
+  iv->copy_flags(gg({"ss", "fu", "rc"}));
+  iv->VALIDATOR(if (get_part_value<std::string>((*vars)[0]) ==
+                    get_part_value<std::string>((*vars)[1])) return false;
+                return true;);
+  iv->PROGRAMMER(EG->f(fl, "clear_rd", VARS["r1"]);
+                 EG->f(fl, "add_rd_md", VARS["r1"], VARS["r2"]););
 
   iv = make_invariant(cf);
   iv->copy_flags(gg({"st", "ss", "fs", "up", "fu"}));
@@ -2056,6 +2087,11 @@ void i686::init_invariants() {
   iv->copy_flags(gg({"st", "ss", "fs", "up", "fu"}));
   iv->PROGRAMMER(
       EG->ta(CAST, "olly", "mov DWORD [", VARS["r1"], "],", VARS["r2"]););
+
+  iv = make_invariant(cf);
+  iv->copy_flags(gg({"ss", "fu", "rc"}));
+  iv->PROGRAMMER(EG->f(fl, "mov_md_vd", VARS["r1"], std::uint64_t(0));
+                 EG->f(fl, "add_md_rd", VARS["r1"], VARS["r2"]););
   // mov_md_rd end
 
   // mov_mw_rw begin
@@ -2088,7 +2124,8 @@ void i686::init_invariants() {
 
   iv = make_invariant(cf);
   iv->copy_flags(gg({"st", "ss", "fs", "up", "fu"}));
-  iv->PROGRAMMER(EG->t(CAST, "mov DWORD [", VARS["r"], "],", VARS["a"]););
+  iv->PROGRAMMER(
+      EG->ta(CAST, "olly", "mov DWORD [", VARS["r"], "],", VARS["a"]););
   // mov_md_vd end
 
   // mov_smd_vd begin
@@ -2286,6 +2323,22 @@ void i686::init_invariants() {
   iv = make_invariant(cf);
   iv->copy_flags(gg({"st", "ss", "fs", "up", "fu"}));
   iv->PROGRAMMER(EG->t(CAST, "call ", VARS["r"]););
+
+  iv = make_invariant(cf);
+  iv->add_register("r1", "common");
+  iv->copy_flags(gg({"fs", "fu", "rc"}));
+  iv->PROGRAMMER(
+      auto seg1 = global::cs.generate_unique_string("usegment");
+      auto esp_ = global::cs.generate_unique_string("pr_regs");
+      auto fctx = global::cs.generate_unique_number("fctx");
+      EG->bss(esp_, esp, fctx); auto new_fl = fl;
+      new_fl.set_flag(type_flags::stack_safe); EG->f(fl, "push_rd", VARS["r"]);
+      EG->f(fl, "push_rd", VARS["r"]);
+      EG->f(fl, "abs_r", VARS["r1"], EG->shd(seg1));
+      EG->f(new_fl, "add_rd_vd", EG->g(esp_), std::uint64_t(8));
+      EG->f(new_fl, "push_rd", VARS["r1"]);
+      EG->f(new_fl, "sub_rd_vd", EG->g(esp_), std::uint64_t(4)); EG->fr(esp_);
+      EG->f(fl, "ret"); EG->end(); EG->start_segment(seg1););
   // call_rd end
 
   // call_md begin
@@ -2375,13 +2428,20 @@ void i686::init_invariants() {
   iv->copy_flags(gg({"st", "ss", "fs", "up", "fu"}));
   iv->PROGRAMMER(EG->t(CAST, "ret"););
 
+  iv = make_invariant(cf);
+  iv->add_register("r", "common");
+  iv->copy_flags(gg({"st", "ss", "fs", "up", "fu"}));
+  iv->PROGRAMMER(EG->f("pop_rd", VARS["r"]); EG->f("jmp_rd", VARS["r"]););
+  // ret end
+
+  // ret_vw
   cf = make_form("ret_vw");
   cf->add_argument("a", 16);
 
   iv = make_invariant(cf);
   iv->copy_flags(gg({"st", "ss", "fs", "up", "fu"}));
   iv->PROGRAMMER(EG->t(CAST, "ret ", VARS["a"]););
-  // ret end
+  // ret_vw end
 
   // bswap begin
 
@@ -2415,12 +2475,49 @@ void i686::init_invariants() {
   cf->add_argument("a", 32);
 
   iv = make_invariant(cf);
-  iv->set_flag(type_flags::stack_safe);
   iv->copy_flags(gg({"ss", "fs", "up", "fu"}));
-  iv->PROGRAMMER(EG->t(CAST, "add ", VARS["r"], ",", VARS["a"]););
+  iv->PROGRAMMER(EG->ta(CAST, "olly", "add ", VARS["r"], ",", VARS["a"]););
 
   iv = make_invariant(cf);
-  iv->set_flag(type_flags::stack_safe);
+  iv->add_variable("a1", 32);
+  iv->copy_flags(gg({"ss", "up", "fu", "rc"}));
+  iv->BALANCER(uint32_t tmp = static_cast<uint32_t>(
+                   get_part_value<std::uint64_t>(VARS["a"]));
+               tmp = ~tmp; tmp++;
+               set_part_value(VARS["a1"], static_cast<uint64_t>(tmp)););
+  iv->PROGRAMMER(EG->f(fl, "sub_rd_vd", VARS["r"], VARS["a1"]););
+  
+  iv = make_invariant(cf);
+  iv->add_variable("a1", 32);
+  iv->add_variable("a2", 32);
+  iv->copy_flags(gg({"ss", "up", "fu", "rc"}));
+  iv->BALANCER(
+      uint32_t a =
+          static_cast<uint32_t>(get_part_value<std::uint64_t>(VARS["a"]));
+      uint32_t b = static_cast<uint32_t>(global::rc.generate_random_number());
+      a = a + b; set_part_value(VARS["a1"], static_cast<uint64_t>(a));
+      set_part_value(VARS["a2"], static_cast<uint64_t>(b)););
+  iv->PROGRAMMER(EG->f(fl, "add_rd_vd", VARS["r"], VARS["a1"]);
+                 if(get_part_value<std::string>(VARS["r"]) == esp)
+                    fl.set_flag(type_flags::stack_safe);
+                 EG->f(fl, "sub_rd_vd", VARS["r"], VARS["a2"]););
+
+  iv = make_invariant(cf);
+  iv->add_variable("a1", 32);
+  iv->add_variable("a2", 32);
+  iv->add_register("r1", "common");
+  iv->copy_flags(gg({"ss", "up", "fu", "rc"}));
+  iv->BALANCER(
+      uint32_t a =
+          static_cast<uint32_t>(get_part_value<std::uint64_t>(VARS["a"]));
+      uint32_t b = static_cast<uint32_t>(global::rc.generate_random_number());
+      a = a ^ b; set_part_value(VARS["a1"], static_cast<uint64_t>(a));
+      set_part_value(VARS["a2"], static_cast<uint64_t>(b)););
+  iv->PROGRAMMER(EG->f(fl, "mov_rd_vd", VARS["r1"], VARS["a1"]);
+                 EG->f(fl, "xor_rd_vd", VARS["r1"], VARS["a2"]);
+                 EG->f(fl, "add_rd_rd", VARS["r"], VARS["r1"]););
+
+  iv = make_invariant(cf);
   iv->copy_flags(gg({"ss", "up", "fu", "rc"}));
   iv->VALIDATOR(
       if ((*vars)[1]->check_flag(type_flags::dependence) ||
@@ -2463,7 +2560,8 @@ void i686::init_invariants() {
 
   iv = make_invariant(cf);
   iv->copy_flags(gg({"st", "fs", "ss", "up", "fu"}));
-  iv->PROGRAMMER(EG->t(CAST, "add DWORD [", VARS["r1"], "],", VARS["r2"]););
+  iv->PROGRAMMER(
+      EG->ta(CAST, "olly", "add DWORD [", VARS["r1"], "],", VARS["r2"]););
   // add_md_rd end
 
   // add_smd_rd begin
@@ -2611,12 +2709,19 @@ void i686::init_invariants() {
   cf->add_argument("a", 32);
 
   iv = make_invariant(cf);
-  iv->set_flag(type_flags::stack_safe);
   iv->copy_flags(gg({"ss", "fs", "up", "fu"}));
-  iv->PROGRAMMER(EG->t(CAST, "sub ", VARS["r"], ",", VARS["a"]););
+  iv->PROGRAMMER(EG->ta(CAST, "olly", "sub ", VARS["r"], ",", VARS["a"]););
 
   iv = make_invariant(cf);
-  iv->set_flag(type_flags::stack_safe);
+  iv->add_variable("a1", 32);
+  iv->copy_flags(gg({"ss", "up", "fu", "rc"}));
+  iv->BALANCER(uint32_t tmp = static_cast<uint32_t>(
+                   get_part_value<std::uint64_t>(VARS["a"]));
+               tmp = ~tmp; tmp++;
+               set_part_value(VARS["a1"], static_cast<uint64_t>(tmp)););
+  iv->PROGRAMMER(EG->f(fl, "add_rd_vd", VARS["r"], VARS["a1"]););
+
+  iv = make_invariant(cf);
   iv->copy_flags(gg({"ss", "fu", "rc"}));
   iv->VALIDATOR(
       if ((*vars)[1]->check_flag(type_flags::dependence) ||
@@ -2636,7 +2741,7 @@ void i686::init_invariants() {
   iv = make_invariant(cf);
   iv->copy_flags(gg({"st", "fs", "ss", "up", "fu"}));
   iv->PROGRAMMER(
-      EG->t(CAST, "sub ", VARS["r1"], ", DWORD [", VARS["r2"], "]"););
+      EG->ta(CAST, "olly", "sub ", VARS["r1"], ", DWORD [", VARS["r2"], "]"););
   // sub_rd_md end
 
   // sub_rd_smd begin
@@ -2648,8 +2753,8 @@ void i686::init_invariants() {
 
   iv = make_invariant(cf);
   iv->copy_flags(gg({"ss", "fs", "up", "fu"}));
-  iv->PROGRAMMER(EG->t(CAST, "sub ", VARS["r1"], ", DWORD [", VARS["r2"],
-                       VARS["sign"], VARS["a"], "]"););
+  iv->PROGRAMMER(EG->ta(CAST, "olly", "sub ", VARS["r1"], ", DWORD [",
+                        VARS["r2"], VARS["sign"], VARS["a"], "]"););
   // sub_rd_smd end
 
   // sub_md_rd begin
@@ -2798,7 +2903,7 @@ void i686::init_invariants() {
 
   iv = make_invariant(cf);
   iv->copy_flags(gg({"st", "fs", "ss", "up", "fu"}));
-  iv->PROGRAMMER(EG->t(CAST, "xor ", VARS["r1"], ",", VARS["r2"]););
+  iv->PROGRAMMER(EG->ta(CAST, "olly", "xor ", VARS["r1"], ",", VARS["r2"]););
   // xor_rd_rd end
 
   // xor_rd_vd begin
@@ -2807,9 +2912,8 @@ void i686::init_invariants() {
   cf->add_argument("a", 32);
 
   iv = make_invariant(cf);
-  iv->set_flag(type_flags::stack_safe);
   iv->copy_flags(gg({"ss", "fs", "up", "fu"}));
-  iv->PROGRAMMER(EG->t(CAST, "xor ", VARS["r"], ",", VARS["a"]););
+  iv->PROGRAMMER(EG->ta(CAST, "olly", "xor ", VARS["r"], ",", VARS["a"]););
   // xor_rd_vd end
 
   // xor_rd_md begin
@@ -2832,8 +2936,8 @@ void i686::init_invariants() {
 
   iv = make_invariant(cf);
   iv->copy_flags(gg({"ss", "fs", "up", "fu"}));
-  iv->PROGRAMMER(EG->t(CAST, "xor ", VARS["r1"], ", DWORD [", VARS["r2"],
-                       VARS["sign"], VARS["a"], "]"););
+  iv->PROGRAMMER(EG->ta(CAST, "olly", "xor ", VARS["r1"], ", DWORD [",
+                        VARS["r2"], VARS["sign"], VARS["a"], "]"););
   // xor_rd_smd end
 
   // xor_md_rd begin
@@ -2991,7 +3095,6 @@ void i686::init_invariants() {
   cf->add_argument("a", 32);
 
   iv = make_invariant(cf);
-  iv->set_flag(type_flags::stack_safe);
   iv->copy_flags(gg({"ss", "fs", "up", "fu"}));
   iv->PROGRAMMER(EG->t(CAST, "or ", VARS["r"], ",", VARS["a"]););
   // or_rd_vd end
@@ -3174,7 +3277,6 @@ void i686::init_invariants() {
   cf->add_argument("a", 32);
 
   iv = make_invariant(cf);
-  iv->set_flag(type_flags::stack_safe);
   iv->copy_flags(gg({"ss", "fs", "up", "fu"}));
   iv->PROGRAMMER(EG->ta(CAST, "olly", "and ", VARS["r"], ",", VARS["a"]););
   // and_rd_vd end
@@ -3374,7 +3476,7 @@ void i686::init_invariants() {
 
   iv = make_invariant(cf);
   iv->copy_flags(gg({"fs", "ss", "up", "fu", "rc"}));
-  iv->PROGRAMMER(EG->f(fl, "add_rd_vd", VARS["r"], std::uint64_t(1)););
+  iv->PROGRAMMER(EG->f(fl, "add_rb_vb", VARS["r"], std::uint64_t(1)););
   // inc_rb end
 
   // inc end
@@ -3413,7 +3515,7 @@ void i686::init_invariants() {
 
   iv = make_invariant(cf);
   iv->copy_flags(gg({"fs", "ss", "up", "fu", "rc"}));
-  iv->PROGRAMMER(EG->f(fl, "sub_rd_vd", VARS["r"], std::uint64_t(1)););
+  iv->PROGRAMMER(EG->f(fl, "sub_rb_vb", VARS["r"], std::uint64_t(1)););
   // dec_rb end
 
   // dec end
@@ -3605,7 +3707,6 @@ void i686::init_invariants() {
   cf->add_argument("a", 32);
 
   iv = make_invariant(cf);
-  iv->set_flag(type_flags::stack_safe);
   iv->copy_flags(gg({"ss", "fs", "up", "fu"}));
   iv->PROGRAMMER(EG->t(CAST, "cmp ", VARS["r"], ",", VARS["a"]););
   // cmp_rd_vd end
@@ -3789,7 +3890,6 @@ void i686::init_invariants() {
   cf->add_argument("a", 32);
 
   iv = make_invariant(cf);
-  iv->set_flag(type_flags::stack_safe);
   iv->copy_flags(gg({"ss", "fs", "up", "fu"}));
   iv->PROGRAMMER(EG->t(CAST, "test ", VARS["r"], ",", VARS["a"]););
   // test_rd_vd end
@@ -4404,7 +4504,6 @@ void i686::init_invariants() {
   cf->add_argument("a", 8);
 
   iv = make_invariant(cf);
-  iv->set_flag(type_flags::stack_safe);
   iv->copy_flags(gg({"fs", "ss", "up", "fu"}));
   iv->PROGRAMMER(EG->t(CAST, "ror ", VARS["r"], ",", VARS["a"]););
   // ror_rd_vb end

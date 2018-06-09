@@ -58,6 +58,12 @@ const std::uint32_t const_rcon[] = {
 
 namespace cry {
 
+class hash {
+public:
+  hash();
+  ~hash();
+};
+
 class crc64 {
 private:
   std::uint64_t value;
