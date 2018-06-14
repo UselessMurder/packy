@@ -89,7 +89,8 @@ enum nf : std::uint8_t {
   ignore_shift = 32,
   full_processed = 33,
   shift_depeneded = 34,
-  balance_done = 35
+  balance_done = 35,
+  original = 36
 };
 }
 

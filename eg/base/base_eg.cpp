@@ -129,8 +129,8 @@ std::string build_branch::to_string() {
   return ss.str();
 }
 
-trash_branch::trash_branch(node *parent) : node(parent) {};
-trash_branch::~trash_branch() {};
+trash_branch::trash_branch(node *parent) : node(parent){};
+trash_branch::~trash_branch(){};
 void trash_branch::grab_node(node *child_node) {
   childs_cache[child_node->get_object_id()] = child_node;
 }
@@ -469,9 +469,9 @@ void build_root::locating() {
   std::vector<std::pair<uint64_t, memory_piece *>> stubs;
 
   for (uint64_t i = 0; i < build_sequence.size(); i++) {
-    if(address_alignment.count(build_sequence[i]->get_name()) > 0) {
+    if (address_alignment.count(build_sequence[i]->get_name()) > 0) {
       auto aa = address_alignment[build_sequence[i]->get_name()];
-      if(current_shift % aa != 0) {
+      if (current_shift % aa != 0) {
         align_stub *stub_mp = new align_stub(get_trash_node());
         stub_mp->set_size(aa - current_shift % aa);
         stub_mp->set_shift(current_shift);
@@ -483,7 +483,7 @@ void build_root::locating() {
     current_shift += build_sequence[i]->get_full_size();
   }
 
-  for(auto st : stubs)
+  for (auto st : stubs)
     build_sequence.insert(build_sequence.begin() + st.first, st.second);
 
   stub_size = current_shift - base;
@@ -507,7 +507,7 @@ void build_root::translating(std::vector<uint8_t> *stub) {
         }
         mp->set_shift(shift_val);
 
-        if(mp->check_flag(type_flags::need_balance)) {
+        if (mp->check_flag(type_flags::need_balance)) {
           global::flag_container tflags;
           tflags.set_flag(dependence_flags::content);
           node_cast<activation_group>(mp)->activate(tflags);
@@ -534,7 +534,6 @@ void build_root::translating(std::vector<uint8_t> *stub) {
 void build_root::get_depended_memory(
     std::string memory_name, std::function<void(memory_piece *mp)> &getter,
     global::flag_container flags) {
-
   memory_piece *target = find_node_by_name<memory_piece>(
       get_build_node(), memory_name, {bypass_flags::childs});
 
@@ -577,7 +576,7 @@ void build_root::get_depended_memory(
       } else {
         mp->set_shift(shift_val);
 
-        if(mp->check_flag(type_flags::need_balance))
+        if (mp->check_flag(type_flags::need_balance))
           node_cast<activation_group>(mp)->activate(flags);
 
         if ((std::strcmp(memory_name.data(), n->get_name().data()) == 0)) {
@@ -623,8 +622,9 @@ void build_root::duplicate_guard(std::string current_name) {
 #endif
 }
 
-void build_root::set_address_alignment(std::string memory_name, uint64_t value) {
-    address_alignment[memory_name] = value;
+void build_root::set_address_alignment(std::string memory_name,
+                                       uint64_t value) {
+  address_alignment[memory_name] = value;
 }
 
 form *build_root::make_form(std::string form_name) {
@@ -850,8 +850,12 @@ std::uint64_t build_root::get_memory_payload_size(std::string memory_name) {
 
 part *build_root::ssd() {
   dependence_part *p = new dependence_part(get_trash_node());
-  p->set_resolver(
-      [this](part *cp) -> std::uint64_t { return this->stub_size; });
+  p->set_resolver([this](part *cp) -> std::uint64_t {
+    if (this->get_state() >= build_states::translating) {
+      return this->stub_size;
+    }
+    return this->get_stub_with_bitness_of_current_machine();
+  });
   return p;
 }
 
@@ -974,7 +978,6 @@ part *build_root::shd(std::string memory_name) {
       std::uint64_t shift = 0;
       std::function<void(memory_piece * mp)> fn = [&shift](memory_piece *mp) {
         shift = mp->get_shift();
-        if (shift == 0) printf("%s\n", "shit");
       };
       this->get_depended_memory(p->get_name_by_index(0), fn,
                                 {dependence_flags::shift});

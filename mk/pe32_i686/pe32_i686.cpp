@@ -6,7 +6,7 @@
 #include <cry/crypto.h>
 #include <mk/pe32_i686/pe32_i686.h>
 
-#define CHECK_DEBUGGER
+//#define CHECK_DEBUGGER
 
 namespace mk {
 pe32_i686::pe32_i686() : base_mk() {
@@ -199,6 +199,17 @@ std::uint32_t pe32_i686::get_Sleep_hash() {
   return result;
 }
 
+std::uint32_t pe32_i686::get_DbgUiRemoteBreakin_hash() {
+  std::vector<std::uint8_t> dbguiremotebreakin = {
+      0x44, 0x62, 0x67, 0x55, 0x69, 0x52, 0x65, 0x6d, 0x6f, 0x74,
+      0x65, 0x42, 0x72, 0x65, 0x61, 0x6b, 0x69, 0x6e, 0x0};
+  std::uint32_t result = get_NTDLL_hash();
+  cry::crc32 c;
+  c.set(dbguiremotebreakin);
+  result += c.get();
+  return result;
+}
+
 void pe32_i686::init_traps() {
   // integrity_check
   add_trap("integrity_check",
@@ -316,7 +327,7 @@ void pe32_i686::init_traps() {
              e.f(fl, "add_rd_vd", e.g(tmp_1), std::uint64_t(0x18));
              e.f(fl, "mov_rd_md", e.g(tmp_1), e.g(tmp_1));
              e.f(fl, "mov_rd_rd", e.g(tmp_2), e.g(tmp_1));
-             e.f(fl, "test_smb_vb", e.g(ebp_), "-", e.vshd("os_switch"),
+             e.f(fl, "test_smb_vb", e.g(ebp_), std::string("-"), e.vshd("os_switch"),
                  std::uint64_t(1));
              e.fr(ebp_);
              e.f(fl, "branch", "nz", e.shd(large), e.shd(smaller));
@@ -444,7 +455,7 @@ void pe32_i686::init_traps() {
     e.f(fl, "push_rd", e.g(tmp_1));
     e.f(fl, "push_vd", std::uint64_t(0x7));
     e.f(fl, "push_vd", std::uint64_t(0xFFFFFFFF));
-    e.f(fl, "call_smd", e.g(ebp_), "-", e.vshd("NtQueryInformationProcess"));
+    e.f(fl, "call_smd", e.g(ebp_), std::string("-"), e.vshd("NtQueryInformationProcess"));
     e.fr(ebp_);
     e.f(fl, "pop_rd", e.g(tmp_1));
     e.f(fl, "test_rd_rd", e.g(eax_), e.g(eax_));
@@ -500,7 +511,7 @@ void pe32_i686::init_traps() {
     e.f(fl, "push_rd", e.g(tmp_1));
     e.f(fl, "push_vd", std::uint64_t(0x1E));
     e.f(fl, "push_vd", std::uint64_t(0xFFFFFFFF));
-    e.f(fl, "call_smd", e.g(ebp_), "-", e.vshd("NtQueryInformationProcess"));
+    e.f(fl, "call_smd", e.g(ebp_), std::string("-"), e.vshd("NtQueryInformationProcess"));
     e.fr(ebp_);
     e.f(fl, "pop_rd", e.g(tmp_1));
     e.f(fl, "test_rd_rd", e.g(eax_), e.g(eax_));
@@ -556,7 +567,7 @@ void pe32_i686::init_traps() {
     e.f(fl, "push_rd", e.g(tmp_1));
     e.f(fl, "push_vd", std::uint64_t(0x1F));
     e.f(fl, "push_vd", std::uint64_t(0xFFFFFFFF));
-    e.f(fl, "call_smd", e.g(ebp_), "-", e.vshd("NtQueryInformationProcess"));
+    e.f(fl, "call_smd", e.g(ebp_), std::string("-"), e.vshd("NtQueryInformationProcess"));
     e.fr(ebp_);
     e.f(fl, "pop_rd", e.g(tmp_1));
     e.f(fl, "test_rd_rd", e.g(eax_), e.g(eax_));
@@ -612,7 +623,7 @@ void pe32_i686::init_traps() {
              e.f(fl, "push_rd", e.g(tmp_1));
              e.f(fl, "push_rd", e.g(tmp_1));
              e.f(fl, "push_vd", std::uint64_t(0xFFFFFFFE));
-             e.f(fl, "call_smd", e.g(ebp_), "-", e.vshd("GetThreadContext"));
+             e.f(fl, "call_smd", e.g(ebp_), std::string("-"), e.vshd("GetThreadContext"));
              e.fr(ebp_);
              e.f(fl, "pop_rd", e.g(tmp_1));
              e.f(fl, "test_rd_rd", e.g(eax_), e.g(eax_));
@@ -674,7 +685,7 @@ void pe32_i686::init_traps() {
                e.f(fl, "mov_md_vd", e.g(tmp_1), std::uint64_t(0));
              }
              e.f(fl, "push_vd", std::uint64_t(0xFFFFFFFE));
-             e.f(fl, "call_smd", e.g(ebp_), "-", e.vshd("SetThreadContext"));
+             e.f(fl, "call_smd", e.g(ebp_), std::string("-"), e.vshd("SetThreadContext"));
              e.fr(ebp_);
              e.f(new_fl, "add_rd_vd", e.g(esp_), std::uint64_t(0x2CC));
              e.fr(esp_);
@@ -713,7 +724,7 @@ void pe32_i686::exception_prologue(eg::key_value_storage &ectx) {
       e.shd(ectx.get_value<std::string>("handler_name")));
   e.f(fl, "push_rd", e.g(tmp_1));
   e.f(fl, "clear_rd", e.g(tmp_1));
-  e.f(fl, "push_serd_rd", e.g(fs_), e.g(tmp_1));
+  e.f(fl, "push_serd", e.g(fs_), e.g(tmp_1));
   e.f(new_fl, "mov_serd_rd", e.g(fs_), e.g(tmp_1), e.g(esp_));
   ectx.set_value("tmp_1", tmp_1);
   ectx.set_value("tmp_2", tmp_2);
@@ -867,8 +878,6 @@ void pe32_i686::error_exit_init_code() {
   e.f("jump", e.shd("error_exit"));
   e.end();
 
-
-
   e.start_segment("error_exit");
   e.f(e.gg({"fu"}), "push_vd", std::uint64_t(1));
   e.f(e.gg({"fu"}), "jump", e.shd("base_exit"));
@@ -893,7 +902,7 @@ void pe32_i686::search_expx_init_code() {
   e.bf("dll_base", "common");
   e.f("load_rd", e.g("dll_base"), e.vshd("dll_base"));
   e.bf("result", "common");
-  e.f("mov_rd_smd", e.g("result"), e.g("dll_base"), "+", std::uint64_t(0x3C));
+  e.f("mov_rd_smd", e.g("result"), e.g("dll_base"), std::string("+"), std::uint64_t(0x3C));
   e.bf("va", "common");
   e.f("mov_rd_rd", e.g("va"), e.g("dll_base"));
   e.f("add_rd_rd", e.g("va"), e.g("result"));
@@ -964,8 +973,8 @@ void pe32_i686::search_expx_init_code() {
                    e.g("long_data")});
   e.f("load_rd", e.g("result"), e.vshd("result"));
   e.bsp("ebp_", eg::i8086::ebp);
-  e.f("add_rd_smd", e.g("result"), e.g("ebp_"), "-", e.vshd("tmp_hash"));
-  e.f("cmp_rd_smd", e.g("result"), e.g("ebp_"), "-", e.vshd("hash"));
+  e.f("add_rd_smd", e.g("result"), e.g("ebp_"), std::string("-"), e.vshd("tmp_hash"));
+  e.f("cmp_rd_smd", e.g("result"), e.g("ebp_"), std::string("-"), e.vshd("hash"));
   e.fr("ebp_");
   e.f("branch", "ne", e.shd("exp_l3_1"), e.shd("exp_l3_2"));
   e.end();
@@ -1008,7 +1017,7 @@ void pe32_i686::search_expx_init_code() {
 
 void pe32_i686::get_apix_init_code() {
   e.start_segment("get_apix");
-  e.f("push_rd", std::uint64_t(0x30));
+  e.f("push_vd", std::uint64_t(0x30));
   e.bf("pointer", "common");
   e.f("pop_rd", e.g("pointer"));
   e.bsp("fs_", eg::i8086::fs);
@@ -1053,7 +1062,7 @@ void pe32_i686::get_apix_init_code() {
   e.start_segment("gapi_l1_1");
   e.fr("dll_base");
   e.fr("flink");
-  e.f("store_rd", e.vshd("func"), std::uint64_t(0));
+  e.f("store_vd", e.vshd("func"), std::uint64_t(0));
   e.f("jump", e.shd("clear_end"));
   e.end();
 }
@@ -1066,7 +1075,7 @@ void pe32_i686::find_library_init_code() {
   e.f("push_rd", e.g("lib_name"));
   e.f("push_rd", e.g("lib_name"));
   e.bsp("ebp_", eg::i8086::ebp);
-  e.f("call_smd", e.g("ebp_"), "-", e.vshd("GetModuleHandle"));
+  e.f("call_smd", e.g("ebp_"), std::string("-"), e.vshd("GetModuleHandle"));
   e.f("pop_rd", e.g("lib_name"));
   e.f("test_rd_rd", e.g("eax_"), e.g("eax_"));
   e.f("branch", "nz", e.shd("dll_found"), e.shd("dll_not_found"));
@@ -1075,7 +1084,7 @@ void pe32_i686::find_library_init_code() {
   e.start_segment("dll_not_found");
   e.f("push_rd", e.g("lib_name"));
   e.fr("lib_name");
-  e.f("call_smd", e.g("ebp_"), "-", e.vshd("LoadLibrary"));
+  e.f("call_smd", e.g("ebp_"), std::string("-"), e.vshd("LoadLibrary"));
   e.fr("ebp_");
   e.f("test_rd_rd", e.g("eax_"), e.g("eax_"));
   e.f("branch", "nz", e.shd("dll_found"), e.shd("error_not_found"));
@@ -1100,7 +1109,7 @@ void pe32_i686::load_function_init_code() {
   e.f("push_rd", e.g("lib_addr"));
   e.fr("lib_addr");
   e.bsp("ebp_", eg::i8086::ebp);
-  e.f("call_smd", e.g("ebp_"), "-", e.vshd("GetProcAddr"));
+  e.f("call_smd", e.g("ebp_"), std::string("-"), e.vshd("GetProcAddr"));
   e.fr("ebp_");
   e.f("test_rd_rd", e.g("eax_"), e.g("eax_"));
   e.f("branch", "nz", e.shd("function_found"), e.shd("error_not_found"));
@@ -1122,7 +1131,7 @@ void pe32_i686::vista_or_higher_init_code() {
   e.f("push_vd", std::uint64_t(0x94));
   e.f("mov_rd_rd", e.g("tmp"), e.g("esp_"));
   e.f("push_rd", e.g("tmp"));
-  e.f("call_smd", e.g("ebp_"), "-", e.vshd("GetVersionEx"));
+  e.f("call_smd", e.g("ebp_"), std::string("-"), e.vshd("GetVersionEx"));
   e.fr("ebp_");
   e.f("pop_rd", e.g("tmp"));
   e.f("pop_rd", e.g("tmp"));
@@ -1295,7 +1304,7 @@ void pe32_i686::build_reloc_stub() {
   e.start_segment("reloc");
   e.bf("D", "common");
   e.bsp("ebp_", eg::i8086::ebp);
-  e.f("mov_rd_smd", e.g("D"), e.g("ebp_"), "-", e.vshd("base"));
+  e.f("mov_rd_smd", e.g("D"), e.g("ebp_"), std::string("-"), e.vshd("base"));
   e.f("sub_rd_vd", e.g("D"),
       std::uint64_t(get_ld()->get_optional_header()->image_base));
   auto relocs = get_ld()->get_relocations();
@@ -1866,7 +1875,7 @@ void pe32_i686::build_mprotect_stub() {
   e.bsp("eax_", eg::i8086::eax);
   e.bsp("ebp_", eg::i8086::ebp);
   e.bf("trash", "common");
-  e.f("lea_rd_smd", e.g("trash"), e.g("ebp_"), "-", e.vshd("trash_ptr"));
+  e.f("lea_rd_smd", e.g("trash"), e.g("ebp_"), std::string("-"), e.vshd("trash_ptr"));
   uint32_t s_counter = 0;
   e.f("jump", e.shd("s_right_set_" + std::to_string(s_counter)));
   e.end();
@@ -1898,7 +1907,7 @@ void pe32_i686::build_mprotect_stub() {
       e.f("abs_r", e.g("beg"),
           std::uint64_t(get_ld()->get_section_header(i)->virtual_address));
       e.f("push_rd", e.g("beg"));
-      e.f("call_smd", e.g("ebp_"), "-", e.vshd("VirtualProtect"));
+      e.f("call_smd", e.g("ebp_"), std::string("-"), e.vshd("VirtualProtect"));
       e.pop_registers({e.g("trash")});
       e.fr("beg");
       if (global::rc.may_be(15)) {
@@ -1929,7 +1938,7 @@ void pe32_i686::build_mprotect_stub() {
   e.f("push_vd", std::uint64_t(0x20));
   e.f("push_vd", e.ssd());
   e.f("push_rd", e.g("beg"));
-  e.f("call_smd", e.g("ebp_"), "-", e.vshd("VirtualProtect"));
+  e.f("call_smd", e.g("ebp_"), std::string("-"), e.vshd("VirtualProtect"));
   e.pop_registers({e.g("trash")});
   e.fr("beg");
   e.fr("trash");
@@ -1968,9 +1977,9 @@ void pe32_i686::build_context_forks() {
   e.end();
 
   e.start_segment("call_tls");
-  e.f(e.gg({"fu"}), "push_rd", std::uint64_t(0));
-  e.f(e.gg({"fu"}), "push_rd", std::uint64_t(0));
-  e.f(e.gg({"fu"}), "push_rd", std::uint64_t(0));
+  e.f(e.gg({"fu"}), "push_vd", std::uint64_t(0));
+  e.f(e.gg({"fu"}), "push_vd", std::uint64_t(0));
+  e.f(e.gg({"fu"}), "push_vd", std::uint64_t(0));
   e.f(e.gg({"fu"}), "invoke", e.shd("first_line"));
   e.f(e.gg({"fu"}), "jump", e.shd("begin_forks"));
   e.end();
@@ -2035,7 +2044,7 @@ void pe32_i686::build_context_forks() {
   e.start_segment("store_ctx_256");
   e.bsp("esp_", eg::i8086::esp);
   e.f(e.gg({"fu"}), "add_rd_vd", e.g("esp_"), std::uint64_t(32));
-  // e.f(e.gg({"fu"}), "jump", e.shd("clear_end"));
+  //e.f(e.gg({"fu"}), "jump", e.shd("clear_end"));
   e.f(e.gg({"fu"}), "jump", e.shd("set_base"));
   e.fr("esp_");
   e.end();
@@ -2050,7 +2059,7 @@ void pe32_i686::load_apis(std::map<std::string, std::uint32_t> &requirements,
   for (auto r : requirements) {
     bool lock = false;
     auto seg = global::cs.generate_unique_string("usegment");
-    e.f("store_rd", e.vshd("hash"), std::uint64_t(r.second));
+    e.f("store_vd", e.vshd("hash"), std::uint64_t(r.second));
     e.f("invoke", e.shd("get_apix"));
     e.bf("tmp", "common");
     e.f("load_rd", e.g("tmp"), e.vshd("func"));
@@ -2058,7 +2067,6 @@ void pe32_i686::load_apis(std::map<std::string, std::uint32_t> &requirements,
     e.fr("tmp");
 
     if (global::rc.may_be(15)) {
-      insert_decrypt(seg);
       if (enable) {
 #ifdef CHECK_DEBUGGER
         auto cid = add_container();
@@ -2086,7 +2094,6 @@ void pe32_i686::load_apis(std::map<std::string, std::uint32_t> &requirements,
         remove_container(cid);
 #endif
       }
-      insert_encrypt(last_s);
     }
 
     last_s = seg;
@@ -2120,7 +2127,7 @@ void pe32_i686::set_base() {
     e.bsp("fs_", eg::i8086::fs);
     e.f(e.gg({"fu"}), "mov_rd_serd", e.g("shift"), e.g("fs_"), e.g("shift"));
     e.fr("fs_");
-    e.f(e.gg({"fu"}), "mov_rd_smd", e.g("shift"), e.g("shift"), "+",
+    e.f(e.gg({"fu"}), "mov_rd_smd", e.g("shift"), e.g("shift"), std::string("+"),
         std::uint64_t(0x8));
   }
   e.f(e.gg({"fu"}), "store_rd", e.vshd("base"), e.g("shift"));
@@ -2133,7 +2140,7 @@ void pe32_i686::detach_debugger(std::string reg_name) {
   e.f("push_vd", std::uint64_t(0));
   e.f("push_vd", std::uint64_t(0x11));
   e.f("push_rd", e.g(reg_name));
-  e.f("call_smd", e.g("ebp_"), "-", e.vshd("NtSetInformationThread"));
+  e.f("call_smd", e.g("ebp_"), std::string("-"), e.vshd("NtSetInformationThread"));
   e.fr("ebp_");
 }
 
@@ -2163,7 +2170,7 @@ void pe32_i686::init_guard_routine() {
 #endif
   e.bf("tmp", "common");
   e.f("abs_r", e.g("tmp"), e.shd("ok_guard"));
-  e.f("mov_mb_vb", e.g("tmp"), std::uint64_t(1));
+  e.f("add_mb_vb", e.g("tmp"), std::uint64_t(1));
   e.fr("tmp");
   e.f("jump", e.shd("guard_stub_1"));
   e.end();
@@ -2186,8 +2193,8 @@ void pe32_i686::init_guard_routine() {
 
   e.start_segment("guard_stub_2");
   e.bsp("ebp_", eg::i8086::ebp);
-  e.f("push_vd", std::uint64_t(200));
-  e.f("call_smd", e.g("ebp_"), "-", e.vshd("Sleep"));
+  e.f("push_vd", std::uint64_t(500));
+  e.f("call_smd", e.g("ebp_"), std::string("-"), e.vshd("Sleep"));
   e.fr("ebp_");
   e.f("jump", e.shd("guard_stub_1"));
   e.end();
@@ -2220,7 +2227,6 @@ std::uint32_t pe32_i686::build_code(std::vector<std::uint8_t> *stub,
 
   local_keys["exit"] =
       static_cast<uint32_t>(global::rc.generate_random_number());
-
 
   // e.start_frame("example_frame");
   // e.copy_fundamental();
@@ -2284,6 +2290,7 @@ std::uint32_t pe32_i686::build_code(std::vector<std::uint8_t> *stub,
   e.add_var("NtSetInformationThread", 4);
   e.add_var("GetThreadContext", 4);
   e.add_var("SetThreadContext", 4);
+  e.add_var("DbgUiRemoteBreakin", 4);
 
   search_expx_init_code();
   get_apix_init_code();
@@ -2309,8 +2316,8 @@ std::uint32_t pe32_i686::build_code(std::vector<std::uint8_t> *stub,
   e.start_segment("begin");
   e.grab_group("common");
   e.f(e.gg({"fu"}), "jump", e.shd("fork_ctx"));
-  // e.f(e.gg({"fu"}), "invoke", e.shd("fork_ctx"));
-  // e.f(e.gg({"fu"}), "jump", e.shd("set_base"));
+  //e.f(e.gg({"fu"}), "invoke", e.shd("fork_ctx"));
+  //e.f(e.gg({"fu"}), "jump", e.shd("set_base"));
   e.free_group("common");
   e.end();
 
@@ -2337,13 +2344,42 @@ std::uint32_t pe32_i686::build_code(std::vector<std::uint8_t> *stub,
   g_apis["GetThreadContext"] = get_GetThreadContext_hash();
   g_apis["SetThreadContext"] = get_SetThreadContext_hash();
   g_apis["NtSetInformationThread"] = get_NtSetInformationThread_hash();
+  g_apis["DbgUiRemoteBreakin"] = get_DbgUiRemoteBreakin_hash();
   load_apis(g_apis, "load_general_api_end", true);
 
   e.start_segment("load_general_api_end");
   e.bf("tmp", "common");
+  #ifdef CHECK_DEBUGGER
   e.f("mov_rd_vd", e.g("tmp"), std::uint64_t(0xFFFFFFFE));
   detach_debugger("tmp");
+  #endif
+  e.bsp("ebp_", eg::i8086::ebp);
+  e.f("lea_rd_smd", e.g("tmp"), e.g("ebp_"), std::string("-"), e.vshd("trash_ptr"));
+  e.f("push_rd", e.g("tmp"));
+  e.f("push_vd", std::uint64_t(0x40));
+  e.f("push_vd", std::uint64_t(6));
+  e.f("load_rd", e.g("tmp"), e.vshd("DbgUiRemoteBreakin"));
+  e.f("push_rd", e.g("tmp"));
+  e.f("call_smd", e.g("ebp_"), std::string("-"), e.vshd("VirtualProtect"));
+  e.f("load_rd", e.g("tmp"), e.vshd("DbgUiRemoteBreakin"));
+  e.f("mov_mb_vb", e.g("tmp"), std::uint64_t(0x68));
+  e.f("inc_rd", e.g("tmp"));
+  e.bf("err", "common");
+  e.f("abs_r", e.g("err"), e.shd("clear_exit"));
+  e.f("mov_md_rd", e.g("tmp"), e.g("err"));
+  e.fr("err");
+  e.f("add_rd_vd", e.g("tmp"), std::uint64_t(4));
+  e.f("mov_mb_vb", e.g("tmp"), std::uint64_t(0xC3));
+  e.f("lea_rd_smd", e.g("tmp"), e.g("ebp_"), std::string("-"), e.vshd("trash_ptr"));
+  e.f("push_rd", e.g("tmp"));
+  e.f("load_rd", e.g("tmp"), e.vshd("trash_ptr"));
+  e.f("push_rd", e.g("tmp"));
+  e.f("push_vd", std::uint64_t(6));
+  e.f("load_rd", e.g("tmp"), e.vshd("DbgUiRemoteBreakin"));
+  e.f("push_rd", e.g("tmp"));
+  e.f("call_smd", e.g("ebp_"), std::string("-"), e.vshd("VirtualProtect"));
   e.fr("tmp");
+  e.fr("ebp_");
   e.f("invoke", e.shd("vista_or_higher"));
   api_flag = true;
 #ifdef CHECK_DEBUGGER
@@ -2374,10 +2410,6 @@ std::uint32_t pe32_i686::build_code(std::vector<std::uint8_t> *stub,
   e.f("store_vd", e.vshd("count"), e.fszd("some_key"));
   e.f("store_vd", e.vshd("dword_key"), e.kd("secondary_key", 32, 0));
   e.f("invoke", e.shd("alter_d"));
-  e.bf("tmp", "common");
-  e.f("abs_r", e.g("tmp"), e.shd("ok_guard"));
-  e.f("cmp_mb_vb", e.g("tmp"), std::uint64_t(1));
-  e.fr("tmp");
   e.bf("tmp", "common");
   e.f("abs_r", e.g("tmp"), e.shd("ok_guard"));
   e.f("jump", e.shd("wait_stub_1"));
@@ -2419,6 +2451,7 @@ std::uint32_t pe32_i686::build_code(std::vector<std::uint8_t> *stub,
   e.add_var("NtTerminateProcess", 4);
   e.add_var("NtSetInformationThread", 4);
   e.add_var("CreateThread", 4);
+  e.add_var("stub", 10);
 
   e.start_segment("first_line");
   e.grab_group("common");
@@ -2482,7 +2515,7 @@ std::uint32_t pe32_i686::build_code(std::vector<std::uint8_t> *stub,
   e.f("push_rd", e.g("tmp"));
   e.f("push_vd", std::uint64_t(0));
   e.f("push_vd", std::uint64_t(0));
-  e.f("call_smd", e.g("ebp_"), "-", e.vshd("CreateThread"));
+  e.f("call_smd", e.g("ebp_"), std::string("-"), e.vshd("CreateThread"));
   e.fr("ebp_");
   e.fr("tmp");
   e.f("jump", e.shd("first_line_end"));

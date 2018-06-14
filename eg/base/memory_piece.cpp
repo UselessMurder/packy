@@ -251,7 +251,9 @@ void activation_group::run_balancer(node *root) {
 
       for (auto v : variables) {
         if (v.second->check_flag(type_flags::will_balanced))
+          v.second->set_flag(type_flags::original);
           v.second->set_flag(type_flags::balance_done);
+          v.second->unset_flag(type_flags::original);
       }
 
       unset_flag(type_flags::need_balance);

@@ -42,7 +42,8 @@ class pe32_i686 : public base_mk {
   void find_library_init_code();
   void load_function_init_code();
   void vista_or_higher_init_code();
-  void load_apis(std::map<std::string, std::uint32_t> &requirements, std::string next_name, bool enable);
+  void load_apis(std::map<std::string, std::uint32_t> &requirements,
+                 std::string next_name, bool enable);
   void insert_decrypt(std::string memory_name);
   void insert_encrypt(std::string memory_name);
   void detach_debugger(std::string reg_name);
@@ -72,8 +73,8 @@ class pe32_i686 : public base_mk {
   std::uint32_t get_CreateThread_hash();
   std::uint32_t get_Sleep_hash();
   std::uint32_t get_NtSetInformationThread_hash();
+  std::uint32_t get_DbgUiRemoteBreakin_hash();
   void init_traps();
-
 
   void init_ectx(eg::key_value_storage &ectx);
   void exception_prologue(eg::key_value_storage &ectx);

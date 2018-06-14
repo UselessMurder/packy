@@ -233,8 +233,9 @@ void loop_guard::join(std::string storage_name, std::uint64_t id) {
 
   auto &current_storage = loop_storages[storage_name];
 
-  if (current_storage.find(id) != current_storage.end())
+  if (current_storage.find(id) != current_storage.end()) {
     throw std::invalid_argument("Loop detected with id: " + std::to_string(id));
+  }
 
   current_storage.insert(id);
 }

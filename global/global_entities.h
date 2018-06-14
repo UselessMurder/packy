@@ -11,6 +11,7 @@
 #include <string>
 #include <vector>
 #include <cryptopp/osrng.h>
+#include <limits.h> 
 
 #define DEFER_NAME_1(x, y) x##y
 #define DEFER_NAME_2(x, y) DEFER_NAME_1(x, y)
@@ -133,6 +134,10 @@ template <typename T> void value_to_vector(std::vector<std::uint8_t> *bytes, T v
   std::uint8_t *end = begin + count;
   bytes->insert(bytes->end(), begin, end);
 }
+
+uint32_t rotl32 (uint32_t n, unsigned int c);
+
+uint32_t rotr32 (uint32_t n, unsigned int c);
 
 } // namespace global
 

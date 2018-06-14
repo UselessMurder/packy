@@ -286,4 +286,20 @@ void wipe_memory(std::vector<std::uint8_t> *mem, std::uint32_t begin,
   for (std::uint32_t i = begin; i < begin + size; i++) (*mem)[i] = 0;
 }
 
+uint32_t rotl32 (uint32_t n, unsigned int c)
+{
+  const unsigned int mask = (CHAR_BIT*sizeof(n) - 1);
+
+  c &= mask;
+  return (n<<c) | (n>>( (-c)&mask ));
+}
+
+uint32_t rotr32 (uint32_t n, unsigned int c)
+{
+  const unsigned int mask = (CHAR_BIT*sizeof(n) - 1);
+
+  c &= mask;
+  return (n>>c) | (n<<( (-c)&mask ));
+}
+
 }  // namespace global

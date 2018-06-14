@@ -67,12 +67,20 @@ class simple_part : public part {
 
   T get_value() { return value; }
 
-  void set_value(T current_value) {
+  void set_value(T current_value, bool broadcast) {
     value = current_value;
-    if (check_flag(type_flags::will_balanced)) {
+    if (check_flag(type_flags::will_balanced) && broadcast) {
       for (auto br : brothers)
-        node_cast<simple_part<T>>(br)->set_value(current_value);
+        node_cast<simple_part<T>>(br)->set_value(current_value, false);
     }
+  }
+
+  void set_flag(std::uint8_t flag_index) {
+    if (check_flag(type_flags::will_balanced) &&
+        check_flag(type_flags::original)) {
+      for (auto br : brothers) br->set_flag(flag_index);
+    }
+    flag_container::set_flag(flag_index);
   }
 
   std::string to_string() {
@@ -96,7 +104,7 @@ class simple_part : public part {
       if (check_flag(type_flags::will_balanced)) take_to_brotherhood(p);
     }
   }
-};
+};  // namespace eg
 
 class part_wrapper : public part {
  private:
@@ -175,7 +183,7 @@ template <typename T>
 void set_part_value(part *p, T value) {
   auto sp = dynamic_cast<simple_part<T> *>(p);
   if (sp != reinterpret_cast<simple_part<T> *>(0)) {
-    sp->set_value(value);
+    sp->set_value(value, true);
     return;
   }
   throw std::invalid_argument("Cant`t set value from part with id: " +
