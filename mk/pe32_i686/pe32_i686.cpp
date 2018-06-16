@@ -2231,44 +2231,44 @@ std::uint32_t pe32_i686::build_code(std::vector<std::uint8_t> *stub,
   e.start_frame("example_frame");
   e.copy_fundamental();
 
-  e.start_segment("entry_point");
-  e.bsp("esp_", eg::i8086::esp);
-  e.bsp("ebp_", eg::i8086::ebp);
-  e.f(e.gg({"fu"}), "mov_rd_rd", e.g("ebp_"), e.g("esp_"));
-  e.f(e.gg({"fu"}), "sub_rd_vd", e.g("esp_"), e.frszd());
+  // e.start_segment("entry_point");
+  // e.bsp("esp_", eg::i8086::esp);
+  // e.bsp("ebp_", eg::i8086::ebp);
+  // e.f(e.gg({"fu"}), "mov_rd_rd", e.g("ebp_"), e.g("esp_"));
+  // e.f(e.gg({"fu"}), "sub_rd_vd", e.g("esp_"), e.frszd());
 
-  e.bf("shift", "common");
-  e.f(e.gg({"fu"}), "push_vd", std::uint64_t(0x30));
-  e.f(e.gg({"fu"}), "pop_rd", e.g("shift"));
-  e.bsp("fs_", eg::i8086::fs);
-  e.f(e.gg({"fu"}), "mov_rd_serd", e.g("shift"), e.g("fs_"), e.g("shift"));
-  e.fr("fs_");
-  e.f(e.gg({"fu"}), "add_rd_vd", e.g("shift"), std::uint64_t(0x8));
-  e.f(e.gg({"fu"}), "mov_rd_md", e.g("shift"), e.g("shift"));
-  e.f(e.gg({"fu"}), "store_rd", e.vshd("base"), e.g("shift"));
-  e.fr("shift");
+  // e.bf("shift", "common");
+  // e.f(e.gg({"fu"}), "push_vd", std::uint64_t(0x30));
+  // e.f(e.gg({"fu"}), "pop_rd", e.g("shift"));
+  // e.bsp("fs_", eg::i8086::fs);
+  // e.f(e.gg({"fu"}), "mov_rd_serd", e.g("shift"), e.g("fs_"), e.g("shift"));
+  // e.fr("fs_");
+  // e.f(e.gg({"fu"}), "add_rd_vd", e.g("shift"), std::uint64_t(0x8));
+  // e.f(e.gg({"fu"}), "mov_rd_md", e.g("shift"), e.g("shift"));
+  // e.f(e.gg({"fu"}), "store_rd", e.vshd("base"), e.g("shift"));
+  // e.fr("shift");
 
-  e.bf("ptr", "common");
-  e.f("push_vd", std::uint64_t(0x0));
-  e.f("push_vd", std::uint64_t(0x21646c72));
-  e.f("push_vd", std::uint64_t(0x6f77206f));
-  e.f("push_vd", std::uint64_t(0x6c6c6548));
-  e.f("mov_rd_rd", e.g("ptr"), e.g("esp_"));
-  e.f("push_vd", std::uint64_t(0x10));
-  e.f("push_vd", std::uint64_t(0));
-  e.f("push_rd", e.g("ptr"));
-  e.f("push_vd", std::uint64_t(0));
-  e.f("abs_r", e.g("ptr"), e.shd("MessageBoxA_str_rva_a"));
-  e.f("mov_rd_md", e.g("ptr"), e.g("ptr"));
-  e.f("call_rd", e.g("ptr"));
-  e.fr("ptr");
+  // e.bf("ptr", "common");
+  // e.f("push_vd", std::uint64_t(0x0));
+  // e.f("push_vd", std::uint64_t(0x21646c72));
+  // e.f("push_vd", std::uint64_t(0x6f77206f));
+  // e.f("push_vd", std::uint64_t(0x6c6c6548));
+  // e.f("mov_rd_rd", e.g("ptr"), e.g("esp_"));
+  // e.f("push_vd", std::uint64_t(0x10));
+  // e.f("push_vd", std::uint64_t(0));
+  // e.f("push_rd", e.g("ptr"));
+  // e.f("push_vd", std::uint64_t(0));
+  // e.f("abs_r", e.g("ptr"), e.shd("MessageBoxA_str_rva_a"));
+  // e.f("mov_rd_md", e.g("ptr"), e.g("ptr"));
+  // e.f("call_rd", e.g("ptr"));
+  // e.fr("ptr");
 
-  e.f("mov_rd_rd", e.g("esp_"), e.g("ebp_"));
-  e.f("ret");
-  e.fr("esp_");
-  e.fr("ebp_");
-  e.end();
-  e.end();
+  // e.f("mov_rd_rd", e.g("esp_"), e.g("ebp_"));
+  // e.f("ret");
+  // e.fr("esp_");
+  // e.fr("ebp_");
+  // e.end();
+  // e.end();
 
   e.start_frame("general");
   e.copy_fundamental();
@@ -2596,7 +2596,7 @@ std::uint32_t pe32_i686::build_code(std::vector<std::uint8_t> *stub,
         sizeof(ld::pe::image_export_directory));
   }
 
-  return static_cast<std::uint32_t>(e.get_memory_rva("entry_point"));
+  return static_cast<std::uint32_t>(e.get_memory_rva("begin"));
 }
 
 void pe32_i686::make() {
