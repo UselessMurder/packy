@@ -5,7 +5,7 @@
 ## Requirements:
     
     1. radare2 libs 2.6 or later, with plugin "x86.olly"
-    2. boost filesystem
+    2. boost
     3. cryptopp
 
 ## Examples:
