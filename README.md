@@ -10,7 +10,7 @@
 
 ## Examples:
 
-    1. [![Packing](https://img.youtube.com/vi/UX7D8aiJ-H0/0.jpg)](https://www.youtube.com/watch?v=UX7D8aiJ-H0)
+   [![Packing](https://img.youtube.com/vi/UX7D8aiJ-H0/0.jpg)](https://www.youtube.com/watch?v=UX7D8aiJ-H0)
 
 ## Build:
 
