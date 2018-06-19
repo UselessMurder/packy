@@ -2228,8 +2228,8 @@ std::uint32_t pe32_i686::build_code(std::vector<std::uint8_t> *stub,
   local_keys["exit"] =
       static_cast<uint32_t>(global::rc.generate_random_number());
 
-  e.start_frame("example_frame");
-  e.copy_fundamental();
+  //e.start_frame("example_frame");
+  //e.copy_fundamental();
 
   // e.start_segment("entry_point");
   // e.bsp("esp_", eg::i8086::esp);

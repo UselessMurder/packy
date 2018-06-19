@@ -1648,12 +1648,15 @@ void i686::init_invariants() {
       EG->bss(esp_, esp, fctx); EG->bs(reg_, "common", fctx);
       EG->f(fl, "push_rd", EG->g(reg_)); EG->f(fl, "push_rd", EG->g(reg_));
       EG->f(fl, "abs_r", EG->g(reg_), EG->shd(seg1));
-      fl.set_flag(type_flags::stack_safe);
-      EG->f(fl, "add_rd_vd", EG->g(esp_), std::uint64_t(8));
-      EG->f(fl, "push_rd", EG->g(reg_));
-      EG->f(fl, "sub_rd_vd", EG->g(esp_), std::uint64_t(4)); EG->fr(esp_);
-      fl.unset_flag(type_flags::stack_safe); EG->f(fl, "pop_rd", EG->g(reg_));
-      EG->fr(reg_); EG->f(fl, "jump", VARS["a"]); EG->end();
+      auto new_fl = fl;
+      new_fl.set_flag(type_flags::stack_safe);
+      EG->f(new_fl, "add_rd_vd", EG->g(esp_), std::uint64_t(8));
+      EG->f(new_fl, "push_rd", EG->g(reg_));
+      EG->f(new_fl, "sub_rd_vd", EG->g(esp_), std::uint64_t(4)); EG->fr(esp_);
+      EG->f(fl, "pop_rd", EG->g(reg_));
+      EG->fr(reg_); 
+      EG->f(fl, "jump", VARS["a"]); 
+      EG->end();
       EG->start_segment(seg1););
 
   iv = make_invariant(cf);
@@ -1673,10 +1676,12 @@ void i686::init_invariants() {
       auto ebp_ = global::cs.generate_unique_string("pr_regs");
       EG->bss(ebp_, ebp, global::cs.generate_unique_number("fctx"));
       EG->f(fl, "abs_r", VARS["r"], VARS["a"]);
-      fl.set_flag(type_flags::fundomental_undepended);
-      EG->f(fl, "store_rd", EG->vshd("temporary"), VARS["r"]); EG->f(
-          fl, "call_smd", EG->g(ebp_), std::string("-"), EG->vshd("temporary"));
-      EG->fr(ebp_); fl.unset_flag(type_flags::fundomental_undepended););
+      auto new_fl = fl;
+      new_fl.set_flag(type_flags::fundomental_undepended);
+      EG->f(new_fl, "store_rd", EG->vshd("temporary"), VARS["r"]); 
+      EG->f(new_fl, "call_smd", EG->g(ebp_), std::string("-"), EG->vshd("temporary"));
+      EG->fr(ebp_); 
+      );
 
   iv = make_invariant(cf);
   iv->copy_flags(gg({"rc"}));
@@ -1686,11 +1691,14 @@ void i686::init_invariants() {
       auto fctx = global::cs.generate_unique_number("fctx");
       EG->bs(reg_, "common", fctx); EG->f(fl, "push_rd", EG->g(reg_));
       EG->bss(ebp_, ebp, fctx); EG->f(fl, "abs_r", EG->g(reg_), VARS["a"]);
-      fl.set_flag(type_flags::fundomental_undepended);
-      EG->f(fl, "store_rd", EG->vshd("temporary"), EG->g(reg_));
-      EG->f(fl, "pop_rd", EG->g(reg_)); EG->fr(reg_); EG->f(
-          fl, "call_smd", EG->g(ebp_), std::string("-"), EG->vshd("temporary"));
-      fl.unset_flag(type_flags::fundomental_undepended); EG->fr(ebp_););
+      
+      auto new_fl = fl;
+      new_fl.set_flag(type_flags::fundomental_undepended);
+      EG->f(new_fl, "store_rd", EG->vshd("temporary"), EG->g(reg_));
+      EG->f(new_fl, "pop_rd", EG->g(reg_)); EG->fr(reg_); 
+      EG->f(new_fl, "call_smd", EG->g(ebp_), std::string("-"), EG->vshd("temporary"));
+      EG->fr(ebp_);
+      );
   // invoke end
 
   // jump begin
@@ -1708,11 +1716,12 @@ void i686::init_invariants() {
       EG->bss(esp_, esp, fctx); EG->bs(reg_, "common", fctx);
       EG->f(fl, "push_rd", EG->g(reg_)); EG->f(fl, "push_rd", EG->g(reg_));
       EG->f(fl, "abs_r", EG->g(reg_), VARS["a"]);
-      fl.set_flag(type_flags::stack_safe);
-      EG->f(fl, "add_rd_vd", EG->g(esp_), std::uint64_t(8));
-      EG->f(fl, "push_rd", EG->g(reg_));
-      EG->f(fl, "sub_rd_vd", EG->g(esp_), std::uint64_t(4));
-      fl.unset_flag(type_flags::stack_safe); EG->f(fl, "pop_rd", EG->g(reg_));
+      auto new_fl = fl;
+      new_fl.set_flag(type_flags::stack_safe);
+      EG->f(new_fl, "add_rd_vd", EG->g(esp_), std::uint64_t(8));
+      EG->f(new_fl, "push_rd", EG->g(reg_));
+      EG->f(new_fl, "sub_rd_vd", EG->g(esp_), std::uint64_t(4)); 
+      EG->f(fl, "pop_rd", EG->g(reg_));
       EG->fr(esp_); EG->fr(reg_); EG->f(fl, "invoke", EG->shd(seg1)););
 
   iv = make_invariant(cf);
@@ -1755,11 +1764,12 @@ void i686::init_invariants() {
       EG->bs(reg_, "common", fctx); EG->f(fl, "push_rd", EG->g(reg_));
       EG->f(fl, "push_rd", EG->g(reg_)); EG->bss(esp_, esp, fctx);
       EG->f(fl, "abs_r", EG->g(reg_), VARS["a"]);
-      fl.set_flag(type_flags::stack_safe);
-      EG->f(fl, "add_rd_vd", EG->g(esp_), std::uint64_t(8));
-      EG->f(fl, "push_rd", EG->g(reg_));
-      EG->f(fl, "sub_rd_vd", EG->g(esp_), std::uint64_t(4));
-      fl.unset_flag(type_flags::stack_safe); EG->fr(esp_);
+      auto new_fl = fl;
+      new_fl.set_flag(type_flags::stack_safe);
+      EG->f(new_fl, "add_rd_vd", EG->g(esp_), std::uint64_t(8));
+      EG->f(new_fl, "push_rd", EG->g(reg_));
+      EG->f(new_fl, "sub_rd_vd", EG->g(esp_), std::uint64_t(4));
+      EG->fr(esp_);
       EG->f(fl, "pop_rd", EG->g(reg_)); EG->fr(reg_); EG->f(fl, "ret"););
 
   iv = make_invariant(cf);
@@ -1769,10 +1779,12 @@ void i686::init_invariants() {
       auto ebp_ = global::cs.generate_unique_string("pr_regs");
       EG->bss(ebp_, ebp, global::cs.generate_unique_number("fctx"));
       EG->f(fl, "abs_r", VARS["r"], VARS["a"]);
-      fl.set_flag(type_flags::fundomental_undepended);
-      EG->f(fl, "store_rd", EG->vshd("temporary"), VARS["r"]); EG->f(
-          fl, "jmp_smd", EG->g(ebp_), std::string("-"), EG->vshd("temporary"));
-      EG->fr(ebp_); fl.unset_flag(type_flags::fundomental_undepended););
+      auto new_fl = fl;
+      new_fl.set_flag(type_flags::fundomental_undepended);
+      EG->f(new_fl, "store_rd", EG->vshd("temporary"), VARS["r"]); 
+      EG->f(new_fl, "jmp_smd", EG->g(ebp_), std::string("-"), EG->vshd("temporary"));
+      EG->fr(ebp_); 
+      );
 
   iv = make_invariant(cf);
   iv->copy_flags(gg({"rc"}));
@@ -1782,11 +1794,13 @@ void i686::init_invariants() {
       auto fctx = global::cs.generate_unique_number("fctx");
       EG->bs(reg_, "common", fctx); EG->f(fl, "push_rd", EG->g(reg_));
       EG->bss(ebp_, ebp, fctx); EG->f(fl, "abs_r", EG->g(reg_), VARS["a"]);
-      fl.set_flag(type_flags::fundomental_undepended);
-      EG->f(fl, "store_rd", EG->vshd("temporary"), EG->g(reg_));
-      EG->f(fl, "pop_rd", EG->g(reg_)); EG->fr(reg_); EG->f(
-          fl, "jmp_smd", EG->g(ebp_), std::string("-"), EG->vshd("temporary"));
-      fl.unset_flag(type_flags::fundomental_undepended); EG->fr(ebp_););
+      auto new_fl = fl;
+      new_fl.set_flag(type_flags::fundomental_undepended);
+      EG->f(new_fl, "store_rd", EG->vshd("temporary"), EG->g(reg_));
+      EG->f(new_fl, "pop_rd", EG->g(reg_)); EG->fr(reg_); 
+      EG->f(new_fl, "jmp_smd", EG->g(ebp_), std::string("-"), EG->vshd("temporary"));
+      EG->fr(ebp_);
+      );
   // jump end
 
   // abs begin
@@ -1951,10 +1965,13 @@ void i686::init_invariants() {
       EG->bs(reg_, "common", fctx); EG->bss(esp_, esp, fctx);
       EG->f(fl, "push_rd", EG->g(reg_)); EG->f(fl, "push_rd", EG->g(reg_));
       EG->f(fl, "mov_rd_vd", EG->g(reg_), VARS["a"]);
-      fl.set_flag(type_flags::stack_safe);
-      EG->t(CAST, "add ", EG->g(esp_), ",8"); EG->f(fl, "push_rd", EG->g(reg_));
-      EG->t(CAST, "sub ", EG->g(esp_), ",4"); EG->f(fl, "pop_rd", EG->g(reg_));
-      fl.unset_flag(type_flags::stack_safe); EG->fr(reg_); EG->fr(esp_););
+      auto new_fl = fl;
+      new_fl.set_flag(type_flags::stack_safe);
+      EG->f(new_fl, "add_rd_vd", EG->g(esp_), std::uint64_t(8));
+      EG->f(new_fl, "push_rd", EG->g(reg_));
+      EG->f(new_fl, "sub_rd_vd", EG->g(esp_), std::uint64_t(4));
+      EG->f(fl, "pop_rd", EG->g(reg_));
+      EG->fr(reg_); EG->fr(esp_););
   // push_vd end
 
   // push_serd begin
