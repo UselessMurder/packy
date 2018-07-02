@@ -17,6 +17,7 @@
 
     git clone https://github.com/UselessMurder/packy
     cd packy
+    mkdir objfiles
     make
     
 ## Usage:
